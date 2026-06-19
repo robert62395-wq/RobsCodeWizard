@@ -1,128 +1,133 @@
-name: Build and Release
+@echo off
+setlocal EnableDelayedExpansion
+title Rob's Code Wizard - Tag and Push Release
 
-on:
-  push:
-    tags:
-      - 'v*.*.*'
-      - 'v*.*.*.*'
+echo.
+echo ============================================================
+echo   Rob's Code Wizard - Tag and Push Release
+echo ============================================================
+echo.
 
-permissions:
-  contents: write
+REM --- 0. Verify git -------------------------------------------
+echo [Step 0] Checking for git...
+where git >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] git was not found on PATH.
+    goto :end_pause
+)
 
-jobs:
-  build:
-    name: Build EXE + Installer on Windows
-    runs-on: windows-latest
+REM --- 1. Verify inside a repo ---------------------------------
+echo [Step 1] Verifying this is a git repo...
+git rev-parse --is-inside-work-tree >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] This folder is not a git repository.
+    echo         Run setup_github.bat first.
+    goto :end_pause
+)
 
-    steps:
-      # ----------------------------------------------------------
-      # Checkout the tagged commit
-      # ----------------------------------------------------------
-      - name: Checkout source
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+REM --- 2. Verify remote ----------------------------------------
+echo [Step 2] Verifying remote 'origin'...
+git remote get-url origin >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] No remote named 'origin' is configured.
+    goto :end_pause
+)
 
-      # ----------------------------------------------------------
-      # Set up Python
-      # ----------------------------------------------------------
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
+REM --- 3. Warn on dirty tree -----------------------------------
+echo [Step 3] Checking for uncommitted changes...
+set "DIRTY=0"
+git diff --quiet
+if errorlevel 1 set "DIRTY=1"
+git diff --cached --quiet
+if errorlevel 1 set "DIRTY=1"
+if "!DIRTY!"=="1" (
+    echo [WARN] You have uncommitted or staged changes.
+    echo        The tag will point at your LAST COMMIT only.
+    set "CONTINUE="
+    set /p CONTINUE=Continue anyway? (Y/N): 
+    if /I not "!CONTINUE!"=="Y" (
+        echo Aborted.
+        goto :end_pause
+    )
+)
 
-      # ----------------------------------------------------------
-      # Install dependencies
-      # ----------------------------------------------------------
-      - name: Install Python dependencies
-        shell: cmd
-        run: |
-          python -m pip install --upgrade pip
-          if exist requirements.txt pip install -r requirements.txt
-          pip install pyinstaller
+REM --- 4. Collect tag info -------------------------------------
+echo.
+echo [Step 4] Collecting tag info...
+set "TAG_NAME="
+set /p TAG_NAME=Tag name (e.g. v0.3.9.4): 
+if "!TAG_NAME!"=="" (
+    echo [ERROR] Tag name is required.
+    goto :end_pause
+)
 
-      # ----------------------------------------------------------
-      # Run tests (non-blocking-friendly; remove '|| exit 0' to enforce)
-      # ----------------------------------------------------------
-      - name: Run pytest
-        shell: cmd
-        run: |
-          if exist tests (
-            pip install pytest
-            pytest -q
-          ) else (
-            echo No tests/ folder, skipping.
-          )
+set "TAG_MSG="
+set /p TAG_MSG=Tag message [Release !TAG_NAME!]: 
+if "!TAG_MSG!"=="" set "TAG_MSG=Release !TAG_NAME!"
 
-      # ----------------------------------------------------------
-      # Build EXE with PyInstaller (onefile, windowed)
-      # Expects entry point at app/main.py and icon at assets/icon.ico
-      # ----------------------------------------------------------
-      - name: Build EXE (PyInstaller onefile windowed)
-        shell: cmd
-        run: |
-          set ICON_ARG=
-          if exist assets\icon.ico set ICON_ARG=--icon assets\icon.ico
+echo.
+echo ------------------------------------------------------------
+echo  Tag      : !TAG_NAME!
+echo  Message  : !TAG_MSG!
+echo ------------------------------------------------------------
+echo.
+pause
 
-          set DATA_ARGS=
-          if exist assets   set DATA_ARGS=!DATA_ARGS! --add-data "assets;assets"
-          if exist data     set DATA_ARGS=!DATA_ARGS! --add-data "data;data"
-          if exist catalogs set DATA_ARGS=!DATA_ARGS! --add-data "catalogs;catalogs"
+REM --- 5. Check existing tag -----------------------------------
+echo.
+echo [Step 5] Checking if tag already exists...
+git rev-parse "!TAG_NAME!" >nul 2>&1
+if not errorlevel 1 (
+    echo [WARN] Tag !TAG_NAME! already exists locally.
+    set "REPLACE="
+    set /p REPLACE=Delete and recreate it? (Y/N): 
+    if /I "!REPLACE!"=="Y" (
+        git tag -d !TAG_NAME!
+        git push origin :refs/tags/!TAG_NAME! >nul 2>&1
+    ) else (
+        echo Aborted.
+        goto :end_pause
+    )
+)
 
-          pyinstaller --noconfirm --onefile --windowed ^
-            --name RobsCodeWizard ^
-            %ICON_ARG% %DATA_ARGS% ^
-            app\main.py
-        env:
-          PYTHONIOENCODING: utf-8
+REM --- 6. Create annotated tag ---------------------------------
+echo.
+echo [Step 6] Creating annotated tag...
+git tag -a !TAG_NAME! -m "!TAG_MSG!"
+if errorlevel 1 goto :fail
 
-      # ----------------------------------------------------------
-      # Install Inno Setup (Chocolatey) and build the installer
-      # Expects build/installer.iss in the repo
-      # ----------------------------------------------------------
-      - name: Install Inno Setup
-        shell: cmd
-        run: choco install innosetup -y --no-progress
+REM --- 7. Push tag ---------------------------------------------
+echo.
+echo [Step 7] Pushing tag !TAG_NAME! to origin...
+git push origin !TAG_NAME!
+if errorlevel 1 goto :fail
 
-      - name: Build Installer (Inno Setup)
-        shell: cmd
-        run: |
-          if not exist build\installer.iss (
-            echo [ERROR] build\installer.iss not found.
-            exit /b 1
-          )
-          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer.iss
+REM --- 8. Summary ----------------------------------------------
+for /f "tokens=*" %%U in ('git remote get-url origin') do set "REMOTE_URL=%%U"
+set "REMOTE_URL=!REMOTE_URL:.git=!"
 
-      # ----------------------------------------------------------
-      # Collect artifacts to a single staging folder
-      # ----------------------------------------------------------
-      - name: Stage release artifacts
-        shell: cmd
-        run: |
-          if not exist release mkdir release
-          if exist dist\RobsCodeWizard.exe        copy /Y dist\RobsCodeWizard.exe        release\
-          if exist dist\RobsCodeWizard_Setup.exe  copy /Y dist\RobsCodeWizard_Setup.exe  release\
-          dir release
+echo.
+echo ============================================================
+echo   SUCCESS - Tag !TAG_NAME! pushed.
+echo.
+echo   GitHub Actions will build and publish the release.
+echo   Watch progress at:
+echo     !REMOTE_URL!/actions
+echo.
+echo   Release page (once workflow completes):
+echo     !REMOTE_URL!/releases/tag/!TAG_NAME!
+echo ============================================================
+goto :end_pause
 
-      # ----------------------------------------------------------
-      # Upload artifacts to the workflow run (for debugging)
-      # ----------------------------------------------------------
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: RobsCodeWizard-${{ github.ref_name }}
-          path: release/*
+:fail
+echo.
+echo ============================================================
+echo   [ERROR] Tag/push failed. See messages above.
+echo ============================================================
 
-      # ----------------------------------------------------------
-      # Create / update the GitHub Release and attach binaries
-      # ----------------------------------------------------------
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Rob's Code Wizard ${{ github.ref_name }}
-          tag_name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: |
-            release/RobsCodeWizard.exe
-            release/RobsCodeWizard_Setup.exe
+:end_pause
+echo.
+echo Press any key to close this window...
+pause >nul
+endlocal
+exit /b
