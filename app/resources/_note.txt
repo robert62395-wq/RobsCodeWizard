@@ -1,0 +1,1 @@
+Runtime resources are loaded from the top-level 'resources/' folder.
