@@ -15,7 +15,7 @@ def run_app(argv=None):
         os.environ["ROBS_CODE_WIZARD_SAFE"] = "1"
     logger = setup_logging()
     install_excepthook(logger)
-    logger.info("Starting Rob\'s Code Wizard (safe=%s)", flags["safe"])
+    logger.info("Starting Rob's Code Wizard (safe=%s)", flags["safe"])
     try:
         from PySide6.QtWidgets import QApplication
         from app.ui.splash import show_splash
@@ -34,3 +34,7 @@ def run_app(argv=None):
     except Exception as exc:
         logger.exception("Unhandled error in main loop: %s", exc)
         raise
+
+
+if __name__ == "__main__":
+    sys.exit(run_app())

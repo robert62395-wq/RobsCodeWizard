@@ -23,12 +23,21 @@ from app.services import recovery
 from app.ui.update_thread import UpdateCheckThread
 from app.ui.log_viewer import LogViewerDialog
 from app.ui.codeset_selector import CodeSetSelector
+from app.ui.modified_data_tab import ModifiedDataTab
 
 
 COLUMNS = ["Point number", "Original Description", "Edited Description",
            "Valid", "Issues/Warnings", "Notes", "Suggestion"]
 
 log = logging.getLogger("robs_code_wizard")
+
+
+def _p_sort_key(row):
+    """Sort key: numeric P where possible, else lexical."""
+    try:
+        return (0, float(row.get("P", 0) or 0))
+    except (TypeError, ValueError):
+        return (1, str(row.get("P", "")))
 
 
 class MainWindow(QMainWindow):
@@ -53,8 +62,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Rob\'s Code Wizard - v{__version__} ({active})")
 
     def _build_ui(self):
-        tabs = QTabWidget(); self.setCentralWidget(tabs)
-        tabs.addTab(self._build_raw_data_tab(), "Raw Data")
+        self.tabs = QTabWidget(); self.setCentralWidget(self.tabs)
+        self.tabs.addTab(self._build_raw_data_tab(), "Raw Data")
+        self.modified_tab = ModifiedDataTab(self)
+        self.tabs.addTab(self.modified_tab, "Modified Data")
 
     def _build_menu(self):
         bar = self.menuBar()
@@ -88,8 +99,7 @@ class MainWindow(QMainWindow):
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._on_context_menu)
+        # v0.3.9.5.0.9: Raw Data is read-only - edits happen in the Modified Data tab
         layout.addWidget(self.table)
         return page
 
@@ -108,13 +118,19 @@ class MainWindow(QMainWindow):
             self._error_dialog("Code set switch failed", exc)
 
     def _revalidate_and_repopulate(self):
-        """v0.3.9.4.1: heavy work split out so it runs after the UI redraws."""
+        """v0.3.9.5.0.9: busy dialog + refresh Modified Data tab after revalidation."""
         try:
             if not self.rows:
                 return
-            self.results = validate_rows(self.rows, self.codeset)
-            self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
-            self._populate_table()
+            from app.ui.busy_dialog import busy
+            with busy(self, "Switching code set...") as dlg:
+                self.results = validate_rows(self.rows, self.codeset)
+                dlg.set_text("Building suggestions...")
+                self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
+                dlg.set_text("Updating table...")
+                self._populate_table()
+                if hasattr(self, "modified_tab"):
+                    self.modified_tab.refresh_from_parent()
         except Exception as exc:
             log.exception("Revalidation failed: %s", exc)
             self._error_dialog("Revalidation failed", exc)
@@ -127,10 +143,14 @@ class MainWindow(QMainWindow):
             self.source_path = path
             # Phase 3: dispatch to the right parser via the codeset
             self.rows = parse_file(path, self.codeset)
-            self._handle_zero_elevation_prompt()
+            # v0.3.9.5.0.9: sort by P (numeric where possible). Zero-elev rows are
+            # kept and flagged yellow on both tabs - never auto-deleted.
+            self.rows = sorted(self.rows, key=_p_sort_key)
             self.results = validate_rows(self.rows, self.codeset)
             self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
             self._populate_table()
+            if hasattr(self, "modified_tab"):
+                self.modified_tab.refresh_from_parent()
             self.export_btn.setEnabled(bool(self.rows))
             if self.settings.get("auto_save_recovery", True):
                 recovery.save_session(self.rows, source_path=path, suggestions=self.suggestions)
@@ -192,7 +212,11 @@ class MainWindow(QMainWindow):
         self.source_path = data.get("source_path")
         self.results = validate_rows(self.rows, self.codeset)
         self.suggestions = data.get("suggestions") or build_suggestions(self.rows, self.codeset, self.results)
-        self._populate_table(); self.export_btn.setEnabled(bool(self.rows))
+        self.rows = sorted(self.rows, key=_p_sort_key)
+        self._populate_table()
+        if hasattr(self, "modified_tab"):
+            self.modified_tab.refresh_from_parent()
+        self.export_btn.setEnabled(bool(self.rows))
 
     def closeEvent(self, event):
         try:
@@ -253,13 +277,8 @@ class MainWindow(QMainWindow):
             f"<p>Active code set: <b>{self.codeset.name.upper()}</b> ({len(self.codeset.codes)} codes).</p>")
 
     def _handle_zero_elevation_prompt(self):
-        zero_rows = [r for r in self.rows if float(r.get("Z", 0) or 0) == 0.0]
-        if not zero_rows: return
-        reply = QMessageBox.question(self, "Zero Elevation Rows",
-            f"{len(zero_rows)} row(s) have zero elevation.\nDelete them?  (No = keep and flag)",
-            QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.Yes:
-            self.rows = [r for r in self.rows if r not in zero_rows]
+        """v0.3.9.5.0.9: deprecated. Zero-elev rows are ALWAYS kept and flagged."""
+        return
 
     def _populate_table(self):
         """v0.3.9.4.1: bulk-update guard (suppress repaints + sort) for big files."""

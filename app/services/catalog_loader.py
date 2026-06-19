@@ -7,6 +7,10 @@ from typing import List, Dict, Optional
 
 from app.services.linework_grammar import GRAMMARS, LineworkGrammar
 
+import logging, sys
+
+log = logging.getLogger("robs_code_wizard")
+
 
 @dataclass
 class CodeSet:
@@ -31,6 +35,15 @@ PARSER_KIND = {"vdt": "pnezd", "odot": "odot"}
 
 
 def _resources_dir() -> Path:
+    """Locate resources/ for both dev and PyInstaller-frozen runs."""
+    # PyInstaller --onefile extracts to sys._MEIPASS; the spec --add-data
+    # places resources/ there at the top level.
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        bundled = Path(meipass) / "resources"
+        if bundled.exists():
+            return bundled
+    # Dev / source-tree fallback: <project_root>/resources next to app/
     return Path(__file__).resolve().parents[2] / "resources"
 
 
@@ -43,12 +56,14 @@ def load_catalog(name: str) -> CodeSet:
     parser_kind = PARSER_KIND[key]
     xlsx = _resources_dir() / CATALOG_FILES[key]
     if not xlsx.exists():
+        log.warning("load_catalog(%s): %s not found, returning empty codeset", key, xlsx)
         return CodeSet(name=key, linework_grammar=grammar,
                        parser_kind=parser_kind, source_path=xlsx)
 
     try:
         from openpyxl import load_workbook
     except ImportError:
+        log.warning("load_catalog(%s): openpyxl not installed, returning empty codeset", key)
         return CodeSet(name=key, linework_grammar=grammar,
                        parser_kind=parser_kind, source_path=xlsx)
 
@@ -65,6 +80,7 @@ def load_catalog(name: str) -> CodeSet:
             header_idx = i
             break
     if header_idx is None:
+        log.warning("load_catalog(%s): header row not found in %s, returning empty codeset", key, xlsx)
         return CodeSet(name=key, linework_grammar=grammar,
                        parser_kind=parser_kind, source_path=xlsx)
 
@@ -88,5 +104,6 @@ def load_catalog(name: str) -> CodeSet:
             "symbol_cell": entry.get("symbolcell", "").strip(),
             "shot_location": entry.get("shotlocation", "").strip(),
         })
+    log.info("load_catalog(%s) loaded %d codes from %s", key, len(codes), xlsx)
     return CodeSet(name=key, codes=codes, linework_grammar=grammar,
                    parser_kind=parser_kind, source_path=xlsx)

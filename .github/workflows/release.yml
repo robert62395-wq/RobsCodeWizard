@@ -46,18 +46,41 @@ jobs:
       - name: Build EXE (PyInstaller onefile windowed)
         shell: cmd
         run: |
-          set ICON_ARG=
-          if exist assets\icon.ico set ICON_ARG=--icon assets\icon.ico
-          set DATA_ARGS=
-          if exist assets   set DATA_ARGS=!DATA_ARGS! --add-data "assets;assets"
-          if exist data     set DATA_ARGS=!DATA_ARGS! --add-data "data;data"
-          if exist catalogs set DATA_ARGS=!DATA_ARGS! --add-data "catalogs;catalogs"
-          pyinstaller --noconfirm --onefile --windowed --name RobsCodeWizard %ICON_ARG% %DATA_ARGS% app\main.py
+          setlocal enabledelayedexpansion
+          set "ICON_ARG="
+          if exist app\assets\icon.ico set "ICON_ARG=--icon app\assets\icon.ico"
+          set "DATA_ARGS="
+          if exist app\assets    set "DATA_ARGS=!DATA_ARGS! --add-data app\assets;app\assets"
+          if exist app\data      set "DATA_ARGS=!DATA_ARGS! --add-data app\data;app\data"
+          if exist resources     set "DATA_ARGS=!DATA_ARGS! --add-data resources;resources"
+          echo Building with: !ICON_ARG! !DATA_ARGS!
+          pyinstaller --noconfirm --clean --onefile --windowed --name RobsCodeWizard !ICON_ARG! !DATA_ARGS! app\main.py
+          if not exist dist\RobsCodeWizard.exe (
+            echo [ERROR] PyInstaller did not produce dist\RobsCodeWizard.exe
+            exit /b 1
+          )
+          if not exist resources\VDT_CODES.xlsx (
+            echo [WARN] resources\VDT_CODES.xlsx not in checkout - EXE will have empty VDT codeset
+          )
+
+      - name: Install Inno Setup
+        shell: cmd
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Installer (Inno Setup)
+        shell: cmd
+        run: |
+          if not exist build\installer.iss (
+            echo [ERROR] build\installer.iss not found.
+            exit /b 1
+          )
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" build\installer.iss
 
       - name: Stage release artifacts
         shell: cmd
         run: |
           if not exist release mkdir release
+          if exist dist\RobsCodeWizard.exe        copy /Y dist\RobsCodeWizard.exe        release\
           if exist dist\RobsCodeWizard_Setup.exe  copy /Y dist\RobsCodeWizard_Setup.exe  release\
           dir release
 
@@ -75,3 +98,4 @@ jobs:
           generate_release_notes: true
           files: |
             release/RobsCodeWizard.exe
+            release/RobsCodeWizard_Setup.exe

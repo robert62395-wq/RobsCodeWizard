@@ -37,3 +37,26 @@ Desktop.ini
 *.spec
 build/
 dist/
+
+# --- Hotfix scaffolding (local-only) ---
+apply_v*.bat
+_payload/
+backup_v*/
+README_HOTFIX_*.txt
+
+# --- Build artifacts ---
+build/
+dist/
+*.spec
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# --- IDE/OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
