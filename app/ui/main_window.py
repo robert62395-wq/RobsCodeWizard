@@ -94,19 +94,30 @@ class MainWindow(QMainWindow):
         return page
 
     def _on_codeset_changed(self, name: str):
+        """v0.3.9.4.1: defer revalidation so the dropdown updates instantly."""
         try:
             log.info("Code set switching: %s -> %s", self.codeset.name, name)
             set_setting("active_codeset", name)
             self.settings["active_codeset"] = name
             self.codeset = load_catalog(name)
-            self._sync_window_title()
             if self.rows:
-                self.results = validate_rows(self.rows, self.codeset)
-                self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
-                self._populate_table()
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, self._revalidate_and_repopulate)
         except Exception as exc:
-            log.exception("Failed to switch code set: %s", exc)
+            log.exception("Code set switch failed: %s", exc)
             self._error_dialog("Code set switch failed", exc)
+
+    def _revalidate_and_repopulate(self):
+        """v0.3.9.4.1: heavy work split out so it runs after the UI redraws."""
+        try:
+            if not self.rows:
+                return
+            self.results = validate_rows(self.rows, self.codeset)
+            self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
+            self._populate_table()
+        except Exception as exc:
+            log.exception("Revalidation failed: %s", exc)
+            self._error_dialog("Revalidation failed", exc)
 
     def on_open_file(self):
         try:
@@ -128,14 +139,15 @@ class MainWindow(QMainWindow):
             self._error_dialog("Open failed", exc)
 
     def on_linework_fix(self):
+        """Phase 4 (v0.3.9.4): show the Linework Fix overlay instead of a dialog."""
         try:
             if not self.rows:
                 QMessageBox.information(self, "Linework Fix", "Open a file first.")
                 return
-            from app.ui.linework_fix_dialog import LineworkFixDialog
-            dlg = LineworkFixDialog(self.rows, self.codeset, self)
-            dlg.jumpToRow.connect(self._jump_to_row)
-            dlg.exec()
+            from app.ui.linework_fix_overlay import LineworkFixOverlay
+            overlay = LineworkFixOverlay(self, self.rows, self.codeset)
+            overlay.jumpToRow.connect(self._jump_to_row)
+            overlay.show_overlay()
         except Exception as exc:
             log.exception("Linework fix failed: %s", exc)
             self._error_dialog("Linework Fix failed", exc)
@@ -250,17 +262,28 @@ class MainWindow(QMainWindow):
             self.rows = [r for r in self.rows if r not in zero_rows]
 
     def _populate_table(self):
-        self.table.setRowCount(len(self.rows))
-        for i, row in enumerate(self.rows):
-            result = self.results[i]
-            suggestion = self.suggestions[i] or ""
-            cells = [str(row.get("P", "")), str(row.get("D", "")), str(row.get("D", "")),
-                     "Yes" if result["valid"] else "No",
-                     "; ".join(result["issues"]), "", suggestion]
-            for c, value in enumerate(cells):
-                item = QTableWidgetItem(value); item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(i, c, item)
-            self._apply_row_color(i, row, result)
+        """v0.3.9.4.1: bulk-update guard (suppress repaints + sort) for big files."""
+        from PySide6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.table.setUpdatesEnabled(False)
+        self.table.setSortingEnabled(False)
+        try:
+            self.table.setRowCount(len(self.rows))
+            for i, row in enumerate(self.rows):
+                result = self.results[i]
+                suggestion = self.suggestions[i] or ""
+                cells = [str(row.get("P", "")), str(row.get("D", "")), str(row.get("D", "")),
+                         "Yes" if result["valid"] else "No",
+                         "; ".join(result["issues"]), "", suggestion]
+                for c, value in enumerate(cells):
+                    item = QTableWidgetItem(value); item.setTextAlignment(Qt.AlignCenter)
+                    self.table.setItem(i, c, item)
+                self._apply_row_color(i, row, result)
+        finally:
+            self.table.setSortingEnabled(True)
+            self.table.setUpdatesEnabled(True)
+            self.table.viewport().update()
+            QApplication.restoreOverrideCursor()
         self.table.resizeColumnsToContents()
 
     def _apply_row_color(self, i, row, result):

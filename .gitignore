@@ -32,3 +32,8 @@ Desktop.ini
 # Local config / secrets
 .env
 *.local
+*.bak
+*.log
+*.spec
+build/
+dist/
