@@ -5,7 +5,7 @@ from app.services.logging_setup import setup_logging, install_excepthook
 
 
 def _icon_path():
-    """v0.3.9.5.1.1: locate resources/icon.ico for both dev and PyInstaller-frozen runs."""
+    """v0.3.9.5.1.1: locate resources/icon.ico for dev + PyInstaller-frozen runs."""
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         p = Path(meipass) / "resources" / "icon.ico"
@@ -33,7 +33,7 @@ def run_app(argv=None):
     try:
         from PySide6.QtWidgets import QApplication
         from PySide6.QtGui import QIcon
-        from app.ui.splash import show_splash
+        from app.ui.splash import show_splash, wait_for_splash
         from app.ui.main_window import MainWindow
     except ImportError as exc:
         logger.error("Missing dependency: %s", exc)
@@ -41,12 +41,13 @@ def run_app(argv=None):
         return 1
     try:
         app = QApplication(sys.argv)
-        # v0.3.9.5.1.1: set app-wide window icon from resources/icon.ico
         icon = _icon_path()
         if icon:
             app.setWindowIcon(QIcon(str(icon)))
         splash = show_splash()
         window = MainWindow(safe_mode=flags["safe"])
+        # v0.3.9.5.1.2.1: hold splash open until the GIF's loading bar fills
+        wait_for_splash(splash)
         window.show()
         splash.finish(window)
         return app.exec()
