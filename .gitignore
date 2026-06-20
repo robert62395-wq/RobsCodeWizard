@@ -6,11 +6,11 @@ __pycache__/
 venv/
 env/
 
-# Build artifacts
-build/
+# --- Build artifacts ---
+build/*
+!build/installer.iss
 dist/
 *.spec
-*.egg-info/
 
 # Inno Setup
 Output/
