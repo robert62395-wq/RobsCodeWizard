@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 env/
+.pytest_cache/
 
 # --- Build artifacts ---
 build/*
@@ -15,12 +16,10 @@ dist/
 # Inno Setup
 Output/
 
-# IDE
+# IDE / OS
 .vscode/
 .idea/
 *.swp
-
-# OS
 Thumbs.db
 Desktop.ini
 .DS_Store
@@ -33,30 +32,9 @@ Desktop.ini
 .env
 *.local
 *.bak
-*.log
-*.spec
-build/
-dist/
 
 # --- Hotfix scaffolding (local-only) ---
 apply_v*.bat
 _payload/
 backup_v*/
 README_HOTFIX_*.txt
-
-# --- Build artifacts ---
-build/
-dist/
-*.spec
-
-# --- Python ---
-__pycache__/
-*.pyc
-.venv/
-.pytest_cache/
-
-# --- IDE/OS ---
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db

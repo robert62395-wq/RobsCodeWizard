@@ -1,12 +1,12 @@
-; Rob's Code Wizard - Inno Setup script (hotfix .8)
-; Tolerates missing app\assets\icon.ico via ISPP #if FileExists().
+; Rob's Code Wizard - Inno Setup script (v0.3.9.5.1.1)
+; ISPP #if FileExists guards keep this resilient to missing optional files.
 
 #define MyAppName "Rob's Code Wizard"
-#define MyAppVersion "0.3.9.5.0"
+#define MyAppVersion "0.3.9.5.1.1"
 #define MyAppPublisher "Robert Slater"
 #define MyAppExeName "RobsCodeWizard.exe"
 #define MyExePath "..\dist\RobsCodeWizard.exe"
-#define MyIconPath "..\app\assets\icon.ico"
+#define MyIconPath "..\resources\icon.ico"
 
 [Setup]
 AppName={#MyAppName}
@@ -28,6 +28,9 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
+CloseApplications=yes
+RestartApplications=yes
+CloseApplicationsFilter=*.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -37,6 +40,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 Source: "{#MyExePath}"; DestDir: "{app}"; Flags: ignoreversion
+#if FileExists(MyIconPath)
+Source: "{#MyIconPath}"; DestDir: "{app}"; Flags: ignoreversion
+#endif
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

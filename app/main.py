@@ -1,6 +1,20 @@
 """Application bootstrap."""
 import os, sys
+from pathlib import Path
 from app.services.logging_setup import setup_logging, install_excepthook
+
+
+def _icon_path():
+    """v0.3.9.5.1.1: locate resources/icon.ico for both dev and PyInstaller-frozen runs."""
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        p = Path(meipass) / "resources" / "icon.ico"
+        if p.exists():
+            return p
+    p = Path(__file__).resolve().parents[1] / "resources" / "icon.ico"
+    if p.exists():
+        return p
+    return None
 
 
 def _parse_args(argv):
@@ -18,6 +32,7 @@ def run_app(argv=None):
     logger.info("Starting Rob's Code Wizard (safe=%s)", flags["safe"])
     try:
         from PySide6.QtWidgets import QApplication
+        from PySide6.QtGui import QIcon
         from app.ui.splash import show_splash
         from app.ui.main_window import MainWindow
     except ImportError as exc:
@@ -26,6 +41,10 @@ def run_app(argv=None):
         return 1
     try:
         app = QApplication(sys.argv)
+        # v0.3.9.5.1.1: set app-wide window icon from resources/icon.ico
+        icon = _icon_path()
+        if icon:
+            app.setWindowIcon(QIcon(str(icon)))
         splash = show_splash()
         window = MainWindow(safe_mode=flags["safe"])
         window.show()
@@ -38,3 +57,4 @@ def run_app(argv=None):
 
 if __name__ == "__main__":
     sys.exit(run_app())
+
