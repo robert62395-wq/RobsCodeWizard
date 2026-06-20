@@ -1,39 +1,18 @@
-"""Numeric <-> Alphabetic line-connect code translator.
-
-Phase 2: forward direction only (Numeric -> Alphabetic) for Civil3D export.
-Phase 5 (v0.4.5): adds reverse direction (Alphabetic -> Numeric) for OpenRoads export.
-"""
+"""Numeric <-> Alphabetic line-connect code translator (v0.4.5: forward + reverse)."""
 from __future__ import annotations
-
 from typing import List, Dict, Tuple
 
-from app.services.linework_parser import (
-    parse,
-    NUMERIC_LINE_CONNECTS,
-)
+from app.services.linework_parser import parse, NUMERIC_LINE_CONNECTS
 
-NUMERIC_TO_ALPHA = {
-    "1": "BL*",
-    "2": "EL*",
-    "3": "OC*",
-    "4": "CL*",
-}
-
-# Reserved for Phase 5 (v0.4.5)
-ALPHA_TO_NUMERIC = {v: k for k, v in NUMERIC_TO_ALPHA.items()}
+NUMERIC_TO_ALPHA = {"1": "BL*", "2": "EL*", "3": "OC*", "4": "CL*"}
+ALPHA_TO_NUMERIC = {"BL*": "1", "EL*": "2", "OC*": "3", "CL*": "4"}
+ALPHA_TO_NUMERIC_NO_STAR = {"BL": "1", "EL": "2", "OC": "3", "CL": "4"}
 
 
-def convert_numeric_to_alpha(description: str) -> Tuple[str, int]:
-    """Convert numeric line-connect tokens to alphabetic equivalents.
-
-    Returns (new_description, count_of_conversions).
-    Preserves order and spacing (single-space delimited output).
-    Point codes (including numeric-suffixed ones like EP1) are untouched.
-    """
+def convert_numeric_to_alpha(description):
     entries = parse(description, dialect="odot")
     count = 0
-    out_tokens: List[str] = []
-
+    out_tokens = []
     for entry in entries:
         out_tokens.append(entry["code"])
         for lc in entry["line_connects"]:
@@ -42,44 +21,35 @@ def convert_numeric_to_alpha(description: str) -> Tuple[str, int]:
                 count += 1
             else:
                 out_tokens.append(lc)
-
     return " ".join(out_tokens), count
 
 
-def convert_alpha_to_numeric(description: str) -> Tuple[str, int]:
-    """Reserved for Phase 5 (v0.4.5) - OpenRoads export."""
-    raise NotImplementedError(
-        "Reverse conversion (Alphabetic -> Numeric) lands in v0.4.5 "
-        "alongside OpenRoads export."
-    )
+def convert_alpha_to_numeric(description):
+    entries = parse(description, dialect="odot")
+    count = 0
+    out_tokens = []
+    for entry in entries:
+        out_tokens.append(entry["code"])
+        for lc in entry["line_connects"]:
+            if lc in ALPHA_TO_NUMERIC:
+                out_tokens.append(ALPHA_TO_NUMERIC[lc])
+                count += 1
+            elif lc in ALPHA_TO_NUMERIC_NO_STAR:
+                out_tokens.append(ALPHA_TO_NUMERIC_NO_STAR[lc])
+                count += 1
+            else:
+                out_tokens.append(lc)
+    return " ".join(out_tokens), count
 
 
-def preview_changes(
-    rows: List[Dict],
-    scope: str = "all",
-    limit: int = 20,
-) -> List[Dict]:
-    """Generate a before/after preview for the dialog UI.
-
-    rows: list of {"point": int|str, "description": str, ...}
-    scope: "all" or "selection" (caller is responsible for pre-filtering on selection)
-    limit: max number of CHANGED rows to return
-
-    Returns list of {"point", "before", "after", "changed", "count"}.
-    """
-    out: List[Dict] = []
+def preview_changes(rows, scope="all", limit=20, direction="numeric_to_alpha"):
+    convert = convert_numeric_to_alpha if direction == "numeric_to_alpha" else convert_alpha_to_numeric
+    out = []
     for row in rows:
         before = row.get("description", "")
-        after, count = convert_numeric_to_alpha(before)
-        changed = before != after
-        if changed:
-            out.append({
-                "point": row.get("point", ""),
-                "before": before,
-                "after": after,
-                "changed": True,
-                "count": count,
-            })
+        after, count = convert(before)
+        if before != after:
+            out.append({"point": row.get("point", ""), "before": before, "after": after, "changed": True, "count": count})
             if len(out) >= limit:
                 break
     return out

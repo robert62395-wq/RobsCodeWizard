@@ -31,8 +31,6 @@ from app.ui.modified_data_tab import ModifiedDataTab
 # v0.4.2: Phase 2 Translation tab + Convert Line Connect Codes dialog
 from app.ui.translation_tab import TranslationTab
 from app.ui.convert_line_connect_dialog import ConvertLineConnectDialog
-# v0.4.5: Export tab
-from app.ui.export_tab import ExportTab
 
 COLUMNS = ["Point number", "Original Description", "Edited Description",
            "Valid", "Issues/Warnings", "Notes", "Suggestion"]
@@ -76,9 +74,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.translation_tab, "Translation")
         self.modified_tab = ModifiedDataTab(self)
         self.tabs.addTab(self.modified_tab, "Modified Data")
-        # v0.4.5: Export tab
-        self.export_tab = ExportTab(self)
-        self.tabs.addTab(self.export_tab, "Export")
 
     def _build_menu(self):
         bar = self.menuBar()

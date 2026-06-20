@@ -1,16 +1,21 @@
-## v0.4.3 - 2026-06-20 - Phase 3: VDT<->ODOT Grammar Translator + Apply Translation
+## v0.4.5 - 2026-06-20 - Phase 5: ODOT Export + Reverse Line-Connect
 
 ### Added
-- `app/services/grammar_translator.py` - bidirectional linework command translator
-- `app/services/code_translator.py` - point code translator via translation_map.json
-- `app/services/description_translator.py` - end-to-end translator
-- `tests/test_grammar_translator.py` (18 tests)
-- `tests/test_code_translator.py` (8 tests)
-- `tests/test_description_translator.py` (9 tests)
+- `app/services/odot_exporter.py` - Civil3D and OpenRoads exporters
+- `app/ui/export_tab.py` - new Export tab in main tab bar
+- `tests/test_odot_exporter.py` (12 tests)
 
 ### Changed
-- `app/ui/translation_tab.py` - added "Translate Loaded Rows" bar with Source/Target dropdowns and Apply button. All Phase 2 features preserved.
+- `app/services/line_connect_translator.py` - reverse direction
+  (alphabetic -> numeric) implemented. BL/BL* -> 1, EL/EL* -> 2,
+  OC/OC* -> 3, CL/CL* -> 4. BC/EC preserved.
+- `app/ui/convert_line_connect_dialog.py` - reverse radio button enabled.
+- `app/ui/main_window.py` - auto-patched to insert Export tab after
+  Modified Data tab.
+- `tests/test_line_connect_translator.py` - added 13 reverse-direction tests.
 
 ### Notes
-- No main_window.py changes needed.
-- N, E, Z, and Point numbers are NEVER touched. Only D column rewritten.
+- main_window.py is patched in-place by overlay/patch_main_window.py.
+  The patcher is idempotent (safe to run multiple times).
+- N, E, Z, and Point numbers are NEVER touched on export.
+- Output CSVs have NO header row (AutoCAD/Civil3D requirement).
