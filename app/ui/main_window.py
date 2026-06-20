@@ -80,6 +80,11 @@ class MainWindow(QMainWindow):
         help_menu.addSeparator()
         about_action = QAction("About", self); about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+        help_menu.addSeparator()
+        # v0.3.9.5.1.6: placeholder reserved for future capability
+        dnt_action = QAction("DO NOT TOUCH", self)
+        dnt_action.triggered.connect(self._on_do_not_touch)
+        help_menu.addAction(dnt_action)
 
     def _build_raw_data_tab(self):
         page = QWidget(); layout = QVBoxLayout(page)
@@ -118,22 +123,41 @@ class MainWindow(QMainWindow):
             self._error_dialog("Code set switch failed", exc)
 
     def _revalidate_and_repopulate(self):
-        """v0.3.9.5.0.9: busy dialog + refresh Modified Data tab after revalidation."""
+        """v0.3.9.5.1.6: QThread worker keeps UI responsive during heavy revalidation."""
         try:
             if not self.rows:
                 return
-            from app.ui.busy_dialog import busy
-            with busy(self, "Switching code set...") as dlg:
-                self.results = validate_rows(self.rows, self.codeset)
-                dlg.set_text("Building suggestions...")
-                self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
-                dlg.set_text("Updating table...")
-                self._populate_table()
-                if hasattr(self, "modified_tab"):
-                    self.modified_tab.refresh_from_parent()
+            from app.ui.busy_dialog import BusyDialog
+            from app.services.revalidation_worker import RevalidationWorker
+            self._reval_dlg = BusyDialog(self, "Switching code set...")
+            self._reval_dlg.show()
+            self._reval_worker = RevalidationWorker(self.rows, self.codeset, self)
+            self._reval_worker.stage.connect(self._reval_dlg.set_text)
+            self._reval_worker.finished_with_data.connect(self._on_revalidation_done)
+            self._reval_worker.error_message.connect(self._on_revalidation_error)
+            self._reval_worker.start()
         except Exception as exc:
             log.exception("Revalidation failed: %s", exc)
             self._error_dialog("Revalidation failed", exc)
+
+    def _on_revalidation_done(self, results, suggestions):
+        """v0.3.9.5.1.6: revalidation worker finished cleanly."""
+        self.results = results
+        self.suggestions = suggestions
+        self._populate_table()
+        if hasattr(self, "modified_tab"):
+            self.modified_tab.refresh_from_parent()
+        if hasattr(self, "_reval_dlg") and self._reval_dlg:
+            self._reval_dlg.close()
+            self._reval_dlg = None
+
+    def _on_revalidation_error(self, msg):
+        """v0.3.9.5.1.6: revalidation worker raised."""
+        if hasattr(self, "_reval_dlg") and self._reval_dlg:
+            self._reval_dlg.close()
+            self._reval_dlg = None
+        log.error("Revalidation worker failed: %s", msg)
+        self._error_dialog("Revalidation failed", Exception(msg))
 
     def on_open_file(self):
         try:
@@ -363,6 +387,15 @@ class MainWindow(QMainWindow):
         btn_row.addStretch(1)
         layout.addLayout(btn_row)
         dlg.exec()
+
+    def _on_do_not_touch(self):
+        """v0.3.9.5.1.6: placeholder for future feature. See TODO below."""
+        # TODO: v0.3.9.6+ - implement reserved future capability here
+        QMessageBox.warning(
+            self, "DO NOT TOUCH",
+            "I told you not to touch it!\n\n"
+            "Reserved for a future feature. Nothing to see here yet."
+        )
 
     def _handle_zero_elevation_prompt(self):
         """v0.3.9.5.0.9: deprecated. Zero-elev rows are ALWAYS kept and flagged."""
