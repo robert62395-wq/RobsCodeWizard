@@ -69,6 +69,21 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self):
         bar = self.menuBar()
+        # v0.3.9.5.2.0.1: Tools menu for point/elevation offset utilities
+        tools_menu = bar.addMenu("&Tools")
+        self._point_offset_action = QAction("Apply Point Offset...", self)
+        self._point_offset_action.triggered.connect(self._on_apply_point_offset)
+        self._point_offset_action.setEnabled(False)
+        tools_menu.addAction(self._point_offset_action)
+        self._elev_offset_action = QAction("Apply Elevation Offset...", self)
+        self._elev_offset_action.triggered.connect(self._on_apply_elevation_offset)
+        self._elev_offset_action.setEnabled(False)
+        tools_menu.addAction(self._elev_offset_action)
+        tools_menu.addSeparator()
+        self._undo_offset_action = QAction("Undo Last Offset", self)
+        self._undo_offset_action.triggered.connect(self._on_undo_offset)
+        self._undo_offset_action.setEnabled(False)
+        tools_menu.addAction(self._undo_offset_action)
         help_menu = bar.addMenu("&Help")
         check_action = QAction("Check for Updates...", self)
         check_action.triggered.connect(lambda: self._start_update_check(silent=False))
@@ -123,10 +138,13 @@ class MainWindow(QMainWindow):
             self._error_dialog("Code set switch failed", exc)
 
     def _revalidate_and_repopulate(self):
-        """v0.3.9.5.1.6: QThread worker keeps UI responsive during heavy revalidation."""
+        """v0.3.9.5.2.0.1 diagnostic: timing logs around the QThread worker dispatch."""
         try:
             if not self.rows:
                 return
+            import time as _t
+            self._reval_t0 = _t.perf_counter()
+            log.info("[diag] _revalidate_and_repopulate: spawning worker (%d rows)", len(self.rows))
             from app.ui.busy_dialog import BusyDialog
             from app.services.revalidation_worker import RevalidationWorker
             self._reval_dlg = BusyDialog(self, "Switching code set...")
@@ -136,20 +154,34 @@ class MainWindow(QMainWindow):
             self._reval_worker.finished_with_data.connect(self._on_revalidation_done)
             self._reval_worker.error_message.connect(self._on_revalidation_error)
             self._reval_worker.start()
+            log.info("[diag] worker.start() called, returning to event loop")
         except Exception as exc:
             log.exception("Revalidation failed: %s", exc)
             self._error_dialog("Revalidation failed", exc)
 
     def _on_revalidation_done(self, results, suggestions):
-        """v0.3.9.5.1.6: revalidation worker finished cleanly."""
+        """v0.3.9.5.2.0.1 diagnostic: timing logs around table repopulation."""
+        import time as _t
+        t0 = _t.perf_counter()
+        log.info("[diag] _on_revalidation_done: entry (received %d results)", len(results))
         self.results = results
         self.suggestions = suggestions
+        t1 = _t.perf_counter()
         self._populate_table()
+        t2 = _t.perf_counter()
+        log.info("[diag] _populate_table: %.3fs (Raw Data, %d rows)", t2 - t1, len(self.rows))
         if hasattr(self, "modified_tab"):
+            t3 = _t.perf_counter()
             self.modified_tab.refresh_from_parent()
+            t4 = _t.perf_counter()
+            log.info("[diag] modified_tab.refresh_from_parent: %.3fs", t4 - t3)
         if hasattr(self, "_reval_dlg") and self._reval_dlg:
             self._reval_dlg.close()
             self._reval_dlg = None
+        t5 = _t.perf_counter()
+        log.info("[diag] _on_revalidation_done total: %.3fs", t5 - t0)
+        if hasattr(self, "_reval_t0"):
+            log.info("[diag] end-to-end code-set switch: %.3fs", t5 - self._reval_t0)
 
     def _on_revalidation_error(self, msg):
         """v0.3.9.5.1.6: revalidation worker raised."""
@@ -176,6 +208,14 @@ class MainWindow(QMainWindow):
             if hasattr(self, "modified_tab"):
                 self.modified_tab.refresh_from_parent()
             self.export_btn.setEnabled(bool(self.rows))
+            # v0.3.9.5.2.0.1: enable Tools menu actions when rows are loaded
+            if hasattr(self, "_point_offset_action"):
+                self._point_offset_action.setEnabled(bool(self.rows))
+            if hasattr(self, "_elev_offset_action"):
+                self._elev_offset_action.setEnabled(bool(self.rows))
+            if hasattr(self, "_undo_offset_action"):
+                self._undo_offset_action.setEnabled(False)
+            self._offset_undo_stack = []  # reset on file open
             if self.settings.get("auto_save_recovery", True):
                 recovery.save_session(self.rows, source_path=path, suggestions=self.suggestions)
         except Exception as exc:
@@ -396,6 +436,113 @@ class MainWindow(QMainWindow):
             "I told you not to touch it!\n\n"
             "Reserved for a future feature. Nothing to see here yet."
         )
+
+    # ------------------------------------------------------------------
+    # v0.3.9.5.2.0.1: Point + Elevation offset utilities (Tools menu)
+    # ------------------------------------------------------------------
+    def _push_offset_undo(self, label):
+        """Save a snapshot of self.rows + label before an offset is applied."""
+        import copy
+        if not hasattr(self, "_offset_undo_stack"):
+            self._offset_undo_stack = []
+        snapshot = (label, copy.deepcopy(self.rows))
+        self._offset_undo_stack.append(snapshot)
+        if hasattr(self, "_undo_offset_action"):
+            self._undo_offset_action.setEnabled(True)
+            self._undo_offset_action.setText(f"Undo Last Offset ({label})")
+
+    def _on_apply_point_offset(self):
+        try:
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
+            from app.services.offsets import apply_point_offset, detect_point_collisions
+            if not self.rows:
+                return
+            offset, ok = QInputDialog.getInt(
+                self, "Apply Point Offset",
+                "Add this value to every Point number\n(use negative for subtraction):",
+                value=1000, minValue=-1000000, maxValue=1000000, step=1,
+            )
+            if not ok or offset == 0:
+                return
+            dups = detect_point_collisions(self.rows, offset)
+            if dups:
+                preview = ", ".join(str(d) for d in dups[:5])
+                if len(dups) > 5:
+                    preview += f", ... ({len(dups) - 5} more)"
+                QMessageBox.warning(
+                    self, "Point Offset - Collision",
+                    f"Applying offset {offset:+d} would create duplicate Point numbers: "
+                    f"{preview}.\n\nAborted; no changes made."
+                )
+                return
+            self._push_offset_undo(f"P {offset:+d}")
+            new_rows, applied = apply_point_offset(self.rows, offset)
+            self.rows = new_rows
+            self.rows = sorted(self.rows, key=_p_sort_key)
+            self._populate_table()
+            if hasattr(self, "modified_tab"):
+                self.modified_tab.refresh_from_parent()
+            log.info("Applied point offset %+d to %d rows", offset, applied)
+            QMessageBox.information(
+                self, "Point Offset Applied",
+                f"Point offset of {offset:+d} applied to {applied} rows."
+            )
+        except Exception as exc:
+            log.exception("Point offset failed: %s", exc)
+            self._error_dialog("Point Offset failed", exc)
+
+    def _on_apply_elevation_offset(self):
+        try:
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
+            from app.services.offsets import apply_elevation_offset
+            if not self.rows:
+                return
+            offset, ok = QInputDialog.getDouble(
+                self, "Apply Elevation Offset",
+                "Add this value to every Elevation (Z)\n"
+                "(use negative for subtraction; NAVD88 -> IGLD85 is typically negative).\n"
+                "Zero-elevation rows are skipped. N and E are never modified.",
+                value=0.0, minValue=-1000.0, maxValue=1000.0, decimals=4,
+            )
+            if not ok or offset == 0.0:
+                return
+            self._push_offset_undo(f"Z {offset:+.4f}")
+            new_rows, applied = apply_elevation_offset(self.rows, offset, skip_zero=True)
+            self.rows = new_rows
+            self._populate_table()
+            if hasattr(self, "modified_tab"):
+                self.modified_tab.refresh_from_parent()
+            log.info("Applied elevation offset %+.4f to %d rows (zero-elev skipped)", offset, applied)
+            QMessageBox.information(
+                self, "Elevation Offset Applied",
+                f"Elevation offset of {offset:+.4f} applied to {applied} rows.\n"
+                "Zero-elevation rows were skipped."
+            )
+        except Exception as exc:
+            log.exception("Elevation offset failed: %s", exc)
+            self._error_dialog("Elevation Offset failed", exc)
+
+    def _on_undo_offset(self):
+        try:
+            if not hasattr(self, "_offset_undo_stack") or not self._offset_undo_stack:
+                return
+            label, snapshot = self._offset_undo_stack.pop()
+            self.rows = snapshot
+            self.rows = sorted(self.rows, key=_p_sort_key)
+            self._populate_table()
+            if hasattr(self, "modified_tab"):
+                self.modified_tab.refresh_from_parent()
+            log.info("Undid offset: %s", label)
+            if hasattr(self, "_undo_offset_action"):
+                if self._offset_undo_stack:
+                    prev_label = self._offset_undo_stack[-1][0]
+                    self._undo_offset_action.setText(f"Undo Last Offset ({prev_label})")
+                else:
+                    self._undo_offset_action.setEnabled(False)
+                    self._undo_offset_action.setText("Undo Last Offset")
+        except Exception as exc:
+            log.exception("Undo offset failed: %s", exc)
+            self._error_dialog("Undo failed", exc)
 
     def _handle_zero_elevation_prompt(self):
         """v0.3.9.5.0.9: deprecated. Zero-elev rows are ALWAYS kept and flagged."""

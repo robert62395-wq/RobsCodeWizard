@@ -61,6 +61,11 @@ class ModifiedDataTab(QWidget):
     # Refresh from MainWindow data
     # -----------------------------------------------------------------
     def refresh_from_parent(self):
+        # v0.3.9.5.2.0.1 diagnostic: timing logs around the heavy widget creation loop
+        import time as _t
+        import logging as _logging
+        _log = _logging.getLogger("robs_code_wizard")
+        t0 = _t.perf_counter()
         rows = list(self.mw.rows)
         suggestions = list(self.mw.suggestions) if self.mw.suggestions else [""] * len(rows)
         results = list(self.mw.results) if self.mw.results else [{"valid": True, "issues": []}] * len(rows)
@@ -68,6 +73,8 @@ class ModifiedDataTab(QWidget):
         # Pair rows with their metadata and sort by P
         indexed = list(zip(rows, suggestions, results))
         indexed.sort(key=lambda t: _p_sort_key(t[0]))
+        t1 = _t.perf_counter()
+        _log.info("[diag] ModifiedDataTab: prep+sort %.3fs (%d rows)", t1 - t0, len(indexed))
 
         self.table.setSortingEnabled(False)
         self.table.setUpdatesEnabled(False)
@@ -79,8 +86,13 @@ class ModifiedDataTab(QWidget):
             self.table.setUpdatesEnabled(True)
             self.table.setSortingEnabled(False)
             self.table.viewport().update()
+        t2 = _t.perf_counter()
+        _log.info("[diag] ModifiedDataTab: setRowCount+populate %.3fs", t2 - t1)
         self.table.resizeColumnsToContents()
+        t3 = _t.perf_counter()
+        _log.info("[diag] ModifiedDataTab: resizeColumnsToContents %.3fs", t3 - t2)
         self.export_btn.setEnabled(bool(indexed))
+        _log.info("[diag] ModifiedDataTab.refresh_from_parent total: %.3fs", t3 - t0)
 
     def _populate_row(self, i, row, suggestion, result):
         original_d = str(row.get("D", ""))
