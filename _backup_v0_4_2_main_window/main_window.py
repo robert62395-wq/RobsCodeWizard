@@ -1,9 +1,4 @@
-"""Main window (Phase 3: ODOT parser dispatch).
-
-v0.4.2 integration:
-    - Translation tab inserted between Raw Data and Modified Data
-    - Tools > Convert Line Connect Codes... action added to existing Tools menu
-"""
+"""Main window (Phase 3: ODOT parser dispatch)."""
 import logging, os
 from pathlib import Path
 from PySide6.QtWidgets import (
@@ -13,6 +8,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QColor, QAction, QDesktopServices
 from PySide6.QtCore import Qt, QUrl
+
 from app import __version__
 from app.services.file_parser import parse_file
 from app.services.validator import validate_rows
@@ -28,12 +24,11 @@ from app.ui.update_thread import UpdateCheckThread
 from app.ui.log_viewer import LogViewerDialog
 from app.ui.codeset_selector import CodeSetSelector
 from app.ui.modified_data_tab import ModifiedDataTab
-# v0.4.2: Phase 2 Translation tab + Convert Line Connect Codes dialog
-from app.ui.translation_tab import TranslationTab
-from app.ui.convert_line_connect_dialog import ConvertLineConnectDialog
+
 
 COLUMNS = ["Point number", "Original Description", "Edited Description",
            "Valid", "Issues/Warnings", "Notes", "Suggestion"]
+
 log = logging.getLogger("robs_code_wizard")
 
 
@@ -64,14 +59,11 @@ class MainWindow(QMainWindow):
 
     def _sync_window_title(self):
         active = (self.codeset.name or "vdt").upper()
-        self.setWindowTitle(f"Rob's Code Wizard - v{__version__} ({active})")
+        self.setWindowTitle(f"Rob\'s Code Wizard - v{__version__} ({active})")
 
     def _build_ui(self):
         self.tabs = QTabWidget(); self.setCentralWidget(self.tabs)
         self.tabs.addTab(self._build_raw_data_tab(), "Raw Data")
-        # v0.4.2: Translation tab between Raw Data and Modified Data
-        self.translation_tab = TranslationTab(self)
-        self.tabs.addTab(self.translation_tab, "Translation")
         self.modified_tab = ModifiedDataTab(self)
         self.tabs.addTab(self.modified_tab, "Modified Data")
 
@@ -92,13 +84,6 @@ class MainWindow(QMainWindow):
         self._undo_offset_action.triggered.connect(self._on_undo_offset)
         self._undo_offset_action.setEnabled(False)
         tools_menu.addAction(self._undo_offset_action)
-        # v0.4.2: Convert Line Connect Codes (numeric -> alphabetic, Civil3D)
-        tools_menu.addSeparator()
-        self._convert_lc_action = QAction("Convert Line Connect Codes...", self)
-        self._convert_lc_action.triggered.connect(self._on_convert_line_connect)
-        self._convert_lc_action.setEnabled(False)
-        tools_menu.addAction(self._convert_lc_action)
-
         help_menu = bar.addMenu("&Help")
         check_action = QAction("Check for Updates...", self)
         check_action.triggered.connect(lambda: self._start_update_check(silent=False))
@@ -138,7 +123,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.table)
         return page
 
-    def _on_codeset_changed(self, name):
+    def _on_codeset_changed(self, name: str):
         """v0.3.9.4.1: defer revalidation so the dropdown updates instantly."""
         try:
             log.info("Code set switching: %s -> %s", self.codeset.name, name)
@@ -230,9 +215,6 @@ class MainWindow(QMainWindow):
                 self._elev_offset_action.setEnabled(bool(self.rows))
             if hasattr(self, "_undo_offset_action"):
                 self._undo_offset_action.setEnabled(False)
-            # v0.4.2: enable Convert Line Connect Codes action when rows are loaded
-            if hasattr(self, "_convert_lc_action"):
-                self._convert_lc_action.setEnabled(bool(self.rows))
             self._offset_undo_stack = []  # reset on file open
             if self.settings.get("auto_save_recovery", True):
                 recovery.save_session(self.rows, source_path=path, suggestions=self.suggestions)
@@ -254,7 +236,7 @@ class MainWindow(QMainWindow):
             log.exception("Linework fix failed: %s", exc)
             self._error_dialog("Linework Fix failed", exc)
 
-    def _jump_to_row(self, row_index):
+    def _jump_to_row(self, row_index: int):
         """Select and scroll to the given row index in the Raw Data table."""
         if 0 <= row_index < self.table.rowCount():
             self.table.selectRow(row_index)
@@ -299,13 +281,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "modified_tab"):
             self.modified_tab.refresh_from_parent()
         self.export_btn.setEnabled(bool(self.rows))
-        # v0.4.2: enable Tools actions on restore as well
-        if hasattr(self, "_point_offset_action"):
-            self._point_offset_action.setEnabled(bool(self.rows))
-        if hasattr(self, "_elev_offset_action"):
-            self._elev_offset_action.setEnabled(bool(self.rows))
-        if hasattr(self, "_convert_lc_action"):
-            self._convert_lc_action.setEnabled(bool(self.rows))
 
     def closeEvent(self, event):
         try:
@@ -403,7 +378,7 @@ class MainWindow(QMainWindow):
         log_dir = get_log_dir(); log_dir.mkdir(parents=True, exist_ok=True)
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(log_dir)))
         QMessageBox.information(self, "Report a Problem",
-            f"The log folder was opened:\n{log_dir}\n\nAttach '{get_log_path().name}' to your report.")
+            f"The log folder was opened:\n{log_dir}\n\nAttach \'{get_log_path().name}\' to your report.")
 
     def _show_about(self):
         """v0.3.9.5.1.3: custom About dialog with logo from resources/logo.png."""
@@ -568,47 +543,6 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             log.exception("Undo offset failed: %s", exc)
             self._error_dialog("Undo failed", exc)
-
-    # ------------------------------------------------------------------
-    # v0.4.2: Convert Line Connect Codes (Tools menu)
-    # ------------------------------------------------------------------
-    def _on_convert_line_connect(self):
-        """Open the Numeric -> Alphabetic line-connect conversion dialog."""
-        try:
-            if not self.rows:
-                return
-            # Build {point, description} dicts for the dialog
-            dialog_rows = [
-                {"point": r.get("P", ""), "description": r.get("D", "")}
-                for r in self.rows
-            ]
-            dlg = ConvertLineConnectDialog(dialog_rows, parent=self)
-            if not dlg.exec():
-                return
-            # Apply: write back to self.rows by index
-            updated = dlg.apply_to_rows(dialog_rows)
-            changed = 0
-            for i, dr in enumerate(updated):
-                if i >= len(self.rows):
-                    break
-                if self.rows[i].get("D", "") != dr["description"]:
-                    self.rows[i]["D"] = dr["description"]
-                    changed += 1
-            # Revalidate + repopulate
-            self.results = validate_rows(self.rows, self.codeset)
-            self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
-            self._populate_table()
-            if hasattr(self, "modified_tab"):
-                self.modified_tab.refresh_from_parent()
-            log.info("Converted line connect codes on %d rows", changed)
-            QMessageBox.information(
-                self, "Convert Line Connect Codes",
-                f"Numeric -> alphabetic conversion applied to {changed} rows.\n"
-                "Civil3D can now consume the descriptions directly."
-            )
-        except Exception as exc:
-            log.exception("Convert line connect failed: %s", exc)
-            self._error_dialog("Convert Line Connect Codes failed", exc)
 
     def _handle_zero_elevation_prompt(self):
         """v0.3.9.5.0.9: deprecated. Zero-elev rows are ALWAYS kept and flagged."""

@@ -1,11 +1,11 @@
 @echo off
 setlocal
 echo ============================================================
-echo  Rob's Code Wizard - Push v0.4.2.1 Hotfix to GitHub
+echo  Rob's Code Wizard - Push Phase 2 (v0.4.2) to GitHub
 echo ============================================================
 
-set TAG=v0.4.2.1
-set MSG=v0.4.2.1 hotfix: integrate TranslationTab + Convert Line Connect Codes into main_window.py
+set TAG=v0.4.2
+set MSG=v0.4.2: Phase 2 - Translation Tab UI + review pane + Convert Line Connect Codes (numeric to alphabetic)
 
 echo [1/5] Checking git status...
 git status --short
@@ -23,7 +23,7 @@ git add -A
 echo [3/5] Committing...
 git commit -m "%MSG%"
 if errorlevel 1 (
-    echo [WARN] Nothing to commit. Continuing to tag...
+    echo [WARN] Nothing to commit or commit failed. Continuing to tag...
 )
 
 echo [4/5] Tagging %TAG%...
@@ -39,7 +39,7 @@ git push origin %TAG%
 
 echo.
 echo ============================================================
-echo  Done. GitHub Actions will now build EXE + Installer.
+echo  Done. GitHub Actions will now build EXE + Installer for v0.4.2.
 echo  Watch: https://github.com/robert62395-wq/RobsCodeWizard/actions
 echo ============================================================
 pause
