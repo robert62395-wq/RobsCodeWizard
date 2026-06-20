@@ -1,73 +1,43 @@
-# Rob's Code Wizard v0.3.9.5.1
+# Rob's Code Wizard v0.3.9.5.2
 
-> 🐕 Meet **Elkie**, your new code wizard mascot — and a whole bag of new tricks.
+> Stabilization + survey-merging utilities.
 
-This release is a top-to-bottom polish pass over v0.3.9.5.0: real branding, an animated splash, a working in-app updater, and a properly threaded code-set switch.
+## 🛠 New tools
 
----
+### Tools → Apply Point Offset...
+Add (or subtract) an integer from every Point number across the loaded file.
 
-## 🎨 New: Elkie branding
+- Detects collisions **before** applying — warns if any rows would overlap with each other or with existing P values from different rows (Interpretation C: catches both kinds)
+- Default value of 1000 (common for joining surveys)
+- Result is sorted by P automatically
 
-- **App / installer / taskbar icon** — multi-resolution `resources/icon.ico` (16, 24, 32, 48, 64, 128, 256 px) generated from the Elkie wizard logo
-- **About dialog** redesigned with `resources/logo.png` (140 px tall), version + active codeset info, and a "View on GitHub" button that opens the repo
-- Logo bundled into the installer via Inno Setup so `RobsCodeWizard_Setup.exe` carries the icon too
+### Tools → Apply Elevation Offset...
+Add (or subtract) a decimal value from every Elevation (Z).
 
-## 🚀 New: Animated splash screen
+- Skip-zero by default — zero-elev rows (yellow-flagged "missing data") are NEVER offset, since adding to a missing value doesn't fix it
+- 4-decimal precision (e.g., `-0.4972` ft for Ohio NAVD88 → IGLD85 shift)
+- **N and E are NEVER modified** by any offset operation (project invariant)
 
-- Plays `resources/splash.gif` on launch — 480×320, 3.2 s loop, the three cartoon dogs in safety gear with survey equipment
-- ✨ Drifting gold sparkles
-- 📊 Yellow loading bar that fills left-to-right
-- Splash now stays visible for the full 3.2 s loop (or until MainWindow finishes building, whichever is longer)
-- Uses PySide6 `QMovie` for real animation; falls back gracefully to a static pixmap if the GIF can't load
+### Tools → Undo Last Offset (...)
+Stack-based undo. Each offset push deep-copies the rows; undo pops back. Label shows what's about to be undone (e.g. "Undo Last Offset (P +1000)"). Stack resets when a new file is opened.
 
-## 🔄 New: GitHub Releases auto-update
+## 🩹 Stabilization
 
-The in-app updater now queries the GitHub Releases API directly — no more hand-maintained `manifest_url`. Tag a new release and users see the update prompt on next launch.
+- **Phase A.1 diagnostic instrumentation** — 11 `[diag]` timing log lines around every step of the code-set switch flow (validate_rows, build_suggestions, _populate_table, modified_tab.refresh_from_parent). Catches future regressions and lets us pinpoint freezes when they happen.
+- **pytest.ini at project root** — scopes test discovery to `tests/` only, skipping `_payload/`, `backup_*/`, `build/`, `dist/`, `.venv/`, etc. No more accidental double-collection from staging folders.
 
-- Update flow:
-  1. `Help → Check for Updates...`
-  2. Background `QThread` queries `https://api.github.com/repos/robert62395-wq/RobsCodeWizard/releases/latest`
-  3. If newer, shows an "Update Available" dialog
-  4. Click **Yes** → installer downloads to `%TEMP%` with a live progress dialog
-  5. App closes → installer runs silently with `/VERYSILENT /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS /NORESTART`
-  6. Installer relaunches the new version
-- Gracefully handles `/releases/latest` returning 404 (prereleases, drafts, or empty repo) by falling back to `/releases` list
+## 📐 Under the hood
 
-## 🧵 New: Threaded code-set switch
-
-The ~15 s revalidation that used to freeze the UI now runs on a `QThread`:
-
-- New module: `app/services/revalidation_worker.py`
-- Main thread shows a `BusyDialog` and **stays responsive** — you can drag the window during the wait
-- Worker emits live status: `Validating codes...` → `Building suggestions...` → done
-
-## 🚨 New: DO NOT TOUCH menu
-
-`Help → DO NOT TOUCH` reserves a slot for a future capability. Currently shows a placeholder warning dialog. A `# TODO: v0.3.9.6+` comment marks the spot.
-
-## 🛠 Fixes
-
-- **`tag_release.bat` parser bug** — the long-running `: was unexpected at this time` crash is gone. All `Y/N` prompts moved into subroutines, simplified prompt strings, and tag-pattern validation added. Now supports one-liner mode: `tag_release.bat v0.3.9.5.1 "message"`
-- **Updater 404 fallback** — when `/releases/latest` returns 404, automatically falls back to `/releases` list and picks the first non-draft entry
-- **Stale `test_updater.py`** replaced with a new 8-test suite matching the GitHub Releases API
-- **`settings.py` migration** — silently drops the deprecated `manifest_url` key when loading older settings files
-
-## 🐕 Under the hood
-
-- `app/services/updater.py` rewritten from scratch: `ReleaseAsset`, `UpdateInfo`, `parse_version`, `is_newer`, `fetch_latest_release`, `fetch_releases_list`, `download_asset`, `launch_installer_and_quit`
-- `app/ui/update_thread.py` adds `UpdateDownloadThread` with `progress`/`finished_with_path`/`error` signals
-- `app/ui/splash.py` rewritten for `QMovie` + `_MEIPASS`-aware resource lookup + `wait_for_splash()` helper
-- `app/main.py` calls `QApplication.setWindowIcon()` from `resources/icon.ico`
-- `app/ui/main_window.py` patched in 6 surgical spots across phases — Phase 3 (About), Phase 5 (updater + 4 new helper methods), Phase 6 (DO NOT TOUCH + revalidation worker + 2 new helpers)
-- `build/installer.iss` bundles `icon.ico` into `{app}`, adds `CloseApplications=yes` + `RestartApplications=yes` to support the auto-upgrade flow
-- `run.bat` and `.github/workflows/release.yml` both prefer `resources/icon.ico` for the EXE/installer icon
+- New module: `app/services/offsets.py` — pure functions, no UI dependencies, fully unit-testable
+- 11 new tests in `tests/test_offsets.py` covering all three apply scenarios + collision detection (duplicate-in-new, old-new overlap, self-equal edge case)
+- `app/ui/main_window.py` surgically patched in 3 spots (Tools menu, file-open enable, handler methods)
 
 ## 📥 Install
 
-- **Recommended:** Download `RobsCodeWizard_Setup.exe` from this release page, run it, accept defaults.
+- **Recommended:** Download `RobsCodeWizard_Setup.exe`, run it, accept defaults.
 - **Portable:** Download `RobsCodeWizard.exe` and run from any folder.
-- **From an installed v0.3.9.5.0:** The in-app updater will surface this release automatically on next launch — click `Yes` and it'll handle the upgrade automatically.
+- **From v0.3.9.5.1:** The in-app updater will surface this release on next launch (**Help → Check for Updates**).
 
 ---
 
-🐕 Many thanks to **Elkie**, **the wolfie**, and **the blue heeler** for being adorable test subjects.
+🐕 Many thanks to **Elkie**, **the wolfie**, and **the blue heeler**.
