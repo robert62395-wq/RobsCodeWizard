@@ -228,34 +228,80 @@ class MainWindow(QMainWindow):
 
     def _start_update_check(self, silent):
         if self._update_thread is not None and self._update_thread.isRunning(): return
-        url = self.settings.get("manifest_url")
+        # v0.3.9.5.1.5: now uses GitHub Releases API (repo) instead of manifest URL
+        repo = self.settings.get("update_repo")
         self._silent_check = silent
-        self._update_thread = UpdateCheckThread(__version__, url, self)
+        self._update_thread = UpdateCheckThread(__version__, repo, self)
         self._update_thread.result_ready.connect(self._on_update_result)
         self._update_thread.error.connect(self._on_update_error)
         self._update_thread.start()
 
     def _on_update_result(self, info):
+        """v0.3.9.5.1.5: fully-automated install flow via GitHub Releases API."""
         if info is None:
             if not self._silent_check:
-                QMessageBox.information(self, "Check for Updates", "Could not reach the update server.")
+                QMessageBox.information(self, "Check for Updates",
+                    "Could not reach GitHub. Check your internet connection.")
             return
         if not info.is_newer:
             if not self._silent_check:
-                QMessageBox.information(self, "Check for Updates", f"You\'re up to date (v{__version__}).")
+                QMessageBox.information(self, "Check for Updates",
+                    f"You're up to date (v{__version__}).")
             return
-        reply = QMessageBox.question(self, "Update Available",
-            f"A newer version is available: v{info.latest_version}\n\nDownload now?",
-            QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(
+            self, "Update Available",
+            f"<h3>Rob's Code Wizard v{info.latest_version}</h3>"
+            f"<p>You currently have v{__version__}.</p>"
+            "<p>Download and install now? This will close the app, install "
+            "the new version, and relaunch automatically.</p>",
+            QMessageBox.Yes | QMessageBox.No,
+        )
         if reply != QMessageBox.Yes: return
-        target = QFileDialog.getExistingDirectory(self, "Choose download folder", ".")
-        if not target: return
+        installer = info.find_installer()
+        if not installer:
+            QMessageBox.warning(self, "Update",
+                "No installer found in the latest release.")
+            return
+        self._start_download_thread(installer)
+
+    def _start_download_thread(self, asset):
+        """v0.3.9.5.1.5: kick off background installer download."""
+        import tempfile
+        from app.ui.update_thread import UpdateDownloadThread
+        from app.ui.busy_dialog import BusyDialog
+        self._download_dlg = BusyDialog(self, f"Downloading {asset.name}...")
+        self._download_dlg.show()
+        self._download_thread = UpdateDownloadThread(
+            asset, tempfile.gettempdir(), self)
+        self._download_thread.progress.connect(self._on_download_progress)
+        self._download_thread.finished_with_path.connect(self._on_download_done)
+        self._download_thread.error.connect(self._on_download_error)
+        self._download_thread.start()
+
+    def _on_download_progress(self, done, total):
+        if total and hasattr(self, "_download_dlg") and self._download_dlg:
+            pct = int(100 * done / total)
+            self._download_dlg.set_text(f"Downloading... {pct}%")
+
+    def _on_download_done(self, path):
+        """v0.3.9.5.1.5: launch installer silently, then quit so it can replace files."""
+        from PySide6.QtWidgets import QApplication
+        from app.services.updater import launch_installer_and_quit
+        if hasattr(self, "_download_dlg") and self._download_dlg:
+            self._download_dlg.close()
+            self._download_dlg = None
         try:
-            out = download_update(info, target)
-            QMessageBox.information(self, "Update Downloaded", apply_update_hint(out))
+            launch_installer_and_quit(path, silent=True)
+            QApplication.quit()
         except Exception as exc:
-            log.exception("Update download failed: %s", exc)
-            self._error_dialog("Update Failed", exc)
+            log.exception("Launch installer failed: %s", exc)
+            self._error_dialog("Update install failed", exc)
+
+    def _on_download_error(self, msg):
+        if hasattr(self, "_download_dlg") and self._download_dlg:
+            self._download_dlg.close()
+            self._download_dlg = None
+        self._error_dialog("Download failed", Exception(msg))
 
     def _on_update_error(self, msg):
         if not self._silent_check:
