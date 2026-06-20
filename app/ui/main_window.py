@@ -271,10 +271,52 @@ class MainWindow(QMainWindow):
             f"The log folder was opened:\n{log_dir}\n\nAttach \'{get_log_path().name}\' to your report.")
 
     def _show_about(self):
-        QMessageBox.about(self, "About Rob\'s Code Wizard",
-            f"<h3>Rob\'s Code Wizard</h3><p>Version <b>{__version__}</b></p>"
-            "<p>Phase 3 of the v0.4.0 rollout - ODOT variable-attribute CSV parser.</p>"
-            f"<p>Active code set: <b>{self.codeset.name.upper()}</b> ({len(self.codeset.codes)} codes).</p>")
+        """v0.3.9.5.1.3: custom About dialog with logo from resources/logo.png."""
+        import sys as _sys
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+        from PySide6.QtGui import QPixmap
+        logo_path = None
+        meipass = getattr(_sys, "_MEIPASS", None)
+        if meipass:
+            p = Path(meipass) / "resources" / "logo.png"
+            if p.exists(): logo_path = p
+        if logo_path is None:
+            p = Path(__file__).resolve().parents[2] / "resources" / "logo.png"
+            if p.exists(): logo_path = p
+        dlg = QDialog(self)
+        dlg.setWindowTitle("About Rob's Code Wizard")
+        dlg.setFixedSize(420, 380)
+        layout = QVBoxLayout(dlg)
+        if logo_path and logo_path.exists():
+            logo_label = QLabel()
+            pix = QPixmap(str(logo_path))
+            if not pix.isNull():
+                pix = pix.scaledToHeight(140, Qt.SmoothTransformation)
+                logo_label.setPixmap(pix)
+                logo_label.setAlignment(Qt.AlignCenter)
+                layout.addWidget(logo_label)
+        title = QLabel("<h2>Rob's Code Wizard</h2>")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+        info = QLabel(
+            f"<p>Version <b>{__version__}</b></p>"
+            f"<p>Active code set: <b>{self.codeset.name.upper()}</b> "
+            f"({len(self.codeset.codes)} codes)</p>"
+        )
+        info.setAlignment(Qt.AlignCenter)
+        layout.addWidget(info)
+        btn_row = QHBoxLayout(); btn_row.addStretch(1)
+        gh_btn = QPushButton("View on GitHub")
+        gh_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(
+                QUrl("https://github.com/robert62395-wq/RobsCodeWizard"))
+        )
+        btn_row.addWidget(gh_btn)
+        close_btn = QPushButton("Close"); close_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(close_btn)
+        btn_row.addStretch(1)
+        layout.addLayout(btn_row)
+        dlg.exec()
 
     def _handle_zero_elevation_prompt(self):
         """v0.3.9.5.0.9: deprecated. Zero-elev rows are ALWAYS kept and flagged."""
