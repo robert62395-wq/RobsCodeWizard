@@ -203,6 +203,7 @@ class MainWindow(QMainWindow):
         log.info("[diag] _on_revalidation_done total: %.3fs", t5 - t0)
         if hasattr(self, "_reval_t0"):
             log.info("[diag] end-to-end code-set switch: %.3fs", t5 - self._reval_t0)
+            self._update_status_bar()  # v0.5.2
 
     def _on_revalidation_error(self, msg):
         """v0.3.9.5.1.6: revalidation worker raised."""
@@ -245,6 +246,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             log.exception("Failed to open file: %s", exc)
             self._error_dialog("Open failed", exc)
+            self._update_status_bar()  # v0.5.2
 
     def on_linework_fix(self):
         """Phase 4 (v0.3.9.4): show the Linework Fix overlay instead of a dialog."""
@@ -312,6 +314,7 @@ class MainWindow(QMainWindow):
             self._elev_offset_action.setEnabled(bool(self.rows))
         if hasattr(self, "_convert_lc_action"):
             self._convert_lc_action.setEnabled(bool(self.rows))
+            self._update_status_bar()  # v0.5.2
 
     def closeEvent(self, event):
         try:
