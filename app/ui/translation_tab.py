@@ -1,49 +1,89 @@
-"""Translation Tab - v0.5.1 rebuild.
-
-UX changes from v0.4.3:
-    - Auto-detected source dialect from parent.codeset.name (read-only label)
-    - Single "Translate Loaded Rows" button (no Source/Target friction)
-    - Combined filter: search box + confidence checkboxes
-    - Table split into "Used in loaded file" + "Other catalog codes" sections
-    - Usage indicator + Count column
-    - Dirty indicator for unsaved overrides
-    - Why column with human-readable match-basis
-    - Bottom review pane (wide, not cramped)
-    - Bulk "Accept all Best-Guess in view" action
-    - Manual edits to any entry supported
-"""
+"""Translation Tab v0.5.1.2 - simplified Raw-Data-style layout."""
 from __future__ import annotations
-
 import csv
-from typing import Optional, Dict, List
+import logging
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QBrush, QFont
+from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QTableWidget,
-    QTableWidgetItem, QComboBox, QLineEdit, QPushButton, QLabel,
-    QMessageBox, QFileDialog, QHeaderView, QGroupBox, QCheckBox,
-    QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
+    QComboBox, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog,
+    QHeaderView, QCheckBox, QDialog, QGridLayout, QTextEdit,
 )
 
 from app.services import translation_map as tm
-from app.services.usage_analyzer import analyze_used_codes, build_usage_summary
-from app.services.match_basis_descriptor import describe, short_label
-from app.ui.translation_review_pane import TranslationReviewPane
+from app.services.usage_analyzer import analyze_used_codes
+from app.services.match_basis_descriptor import short_label
+
+log = logging.getLogger("robs_code_wizard")
 
 CONFIDENCE_COLORS = {
-    "exact":      QColor(200, 240, 200),
+    "exact": QColor(200, 240, 200),
     "best-guess": QColor(255, 245, 180),
-    "unmatched":  QColor(255, 200, 200),
-    "manual":     QColor(200, 220, 255),
+    "unmatched": QColor(255, 200, 200),
+    "manual": QColor(200, 220, 255),
 }
 
-COLUMNS = [
-    "\u25CF", "Used", "Count",
-    "VDT Code", "VDT Type", "VDT Desc",
-    "ODOT Code", "ODOT Type", "ODOT Desc",
-    "Confidence", "Why",
-]
+COLUMNS = ["VDT Code", "VDT Description", "ODOT Code", "ODOT Description",
+           "Confidence", "Count", "Notes"]
+
+
+class EntryEditDialog(QDialog):
+    def __init__(self, entry, all_odot_codes, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Translation Entry")
+        self.resize(600, 350)
+        self._entry = entry
+        self._build_ui(all_odot_codes)
+
+    def _build_ui(self, all_odot_codes):
+        layout = QGridLayout(self)
+        vdt = self._entry.get("vdt") or {}
+        odot = self._entry.get("odot") or {}
+        layout.addWidget(QLabel("<b>VDT side</b>"), 0, 0, 1, 2)
+        layout.addWidget(QLabel("Code:"), 1, 0)
+        self.vdt_code = QLineEdit(vdt.get("code", ""))
+        layout.addWidget(self.vdt_code, 1, 1)
+        layout.addWidget(QLabel("Description:"), 2, 0)
+        self.vdt_desc = QLineEdit(vdt.get("description", ""))
+        layout.addWidget(self.vdt_desc, 2, 1)
+        layout.addWidget(QLabel("<b>ODOT side</b>"), 3, 0, 1, 2)
+        layout.addWidget(QLabel("Code:"), 4, 0)
+        self.odot_code = QComboBox()
+        self.odot_code.setEditable(True)
+        self.odot_code.addItems([""] + all_odot_codes)
+        self.odot_code.setCurrentText(odot.get("code", ""))
+        layout.addWidget(self.odot_code, 4, 1)
+        layout.addWidget(QLabel("Description:"), 5, 0)
+        self.odot_desc = QLineEdit(odot.get("description", ""))
+        layout.addWidget(self.odot_desc, 5, 1)
+        layout.addWidget(QLabel("Notes:"), 6, 0)
+        self.notes = QTextEdit()
+        self.notes.setPlainText(self._entry.get("notes", ""))
+        self.notes.setMaximumHeight(70)
+        layout.addWidget(self.notes, 6, 1)
+        btns = QHBoxLayout()
+        save = QPushButton("Save")
+        save.clicked.connect(self.accept)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.reject)
+        btns.addStretch(1)
+        btns.addWidget(save)
+        btns.addWidget(cancel)
+        layout.addLayout(btns, 7, 0, 1, 2)
+
+    def apply_changes(self):
+        if self._entry.get("vdt") is None:
+            self._entry["vdt"] = {}
+        self._entry["vdt"]["code"] = self.vdt_code.text().strip()
+        self._entry["vdt"]["description"] = self.vdt_desc.text().strip()
+        if self._entry.get("odot") is None:
+            self._entry["odot"] = {}
+        self._entry["odot"]["code"] = self.odot_code.currentText().strip()
+        self._entry["odot"]["description"] = self.odot_desc.text().strip()
+        self._entry["notes"] = self.notes.toPlainText()
+        self._entry["user_override"] = True
+        self._entry["confidence"] = "manual"
 
 
 class TranslationTab(QWidget):
@@ -52,125 +92,121 @@ class TranslationTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._parent_main = parent
-        self._map_data: Dict = {"entries": []}
-        self._used_counts: Dict[str, int] = {}
-        self._dirty_entry_ids = set()
+        self._map_data = {"entries": []}
+        self._used_counts = {}
+        self._dirty_ids = set()
         self._build_ui()
-        self.refresh_map()
+        self._safe_refresh()
 
     def _build_ui(self):
         root = QVBoxLayout(self)
+        self.status_lbl = QLabel("Loading...")
+        self.status_lbl.setWordWrap(True)
+        root.addWidget(self.status_lbl)
 
-        engine_box = QGroupBox("Translate Loaded Rows")
-        engine_layout = QHBoxLayout(engine_box)
-        engine_layout.addWidget(QLabel("Source:"))
-        self.source_lbl = QLabel("<b>(no file loaded)</b>")
-        self.source_lbl.setMinimumWidth(150)
-        engine_layout.addWidget(self.source_lbl)
-        engine_layout.addSpacing(20)
-        engine_layout.addWidget(QLabel("Target:"))
-        self.target_dialect = QComboBox()
-        self.target_dialect.addItems(["ODOT", "VDT"])
-        engine_layout.addWidget(self.target_dialect)
-        engine_layout.addSpacing(20)
+        # Top toolbar - mimics Raw Data tab style
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("Source:"))
+        self.source_lbl = QLabel("<b>(none)</b>")
+        bar.addWidget(self.source_lbl)
+        bar.addSpacing(20)
+        bar.addWidget(QLabel("Target:"))
+        self.target_combo = QComboBox()
+        self.target_combo.addItems(["ODOT", "VDT"])
+        bar.addWidget(self.target_combo)
+        bar.addSpacing(20)
         self.translate_btn = QPushButton("Translate Loaded Rows")
-        self.translate_btn.setMinimumWidth(200)
         self.translate_btn.clicked.connect(self._on_translate)
-        engine_layout.addWidget(self.translate_btn)
-        engine_layout.addStretch(1)
-        root.addWidget(engine_box)
-
-        filter_bar = QHBoxLayout()
-        filter_bar.addWidget(QLabel("Search:"))
+        bar.addWidget(self.translate_btn)
+        bar.addStretch(1)
+        bar.addWidget(QLabel("Search:"))
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Code, description, or type:linework ...")
-        self.search_box.textChanged.connect(self._apply_filters)
-        filter_bar.addWidget(self.search_box, 2)
-        filter_bar.addSpacing(15)
-        filter_bar.addWidget(QLabel("Show:"))
-        self.show_used = QCheckBox("In use")
-        self.show_used.setChecked(True)
-        self.show_used.toggled.connect(self._apply_filters)
-        self.show_exact = QCheckBox("Exact")
-        self.show_exact.setChecked(True)
-        self.show_exact.toggled.connect(self._apply_filters)
-        self.show_best = QCheckBox("Best-guess")
-        self.show_best.setChecked(True)
-        self.show_best.toggled.connect(self._apply_filters)
+        self.search_box.setPlaceholderText("code or description...")
+        self.search_box.setMaximumWidth(250)
+        self.search_box.textChanged.connect(self._apply_filter)
+        bar.addWidget(self.search_box)
+        root.addLayout(bar)
+
+        # Filter row
+        filt = QHBoxLayout()
+        filt.addWidget(QLabel("Show:"))
+        self.show_used_only = QCheckBox("Only codes in loaded file")
+        self.show_used_only.setChecked(True)
+        self.show_used_only.toggled.connect(self._apply_filter)
         self.show_unmatched = QCheckBox("Unmatched")
         self.show_unmatched.setChecked(True)
-        self.show_unmatched.toggled.connect(self._apply_filters)
+        self.show_unmatched.toggled.connect(self._apply_filter)
+        self.show_bestguess = QCheckBox("Best-guess")
+        self.show_bestguess.setChecked(True)
+        self.show_bestguess.toggled.connect(self._apply_filter)
+        self.show_exact = QCheckBox("Exact")
+        self.show_exact.setChecked(True)
+        self.show_exact.toggled.connect(self._apply_filter)
         self.show_manual = QCheckBox("Manual")
         self.show_manual.setChecked(True)
-        self.show_manual.toggled.connect(self._apply_filters)
-        for cb in (self.show_used, self.show_exact, self.show_best, self.show_unmatched, self.show_manual):
-            filter_bar.addWidget(cb)
-        filter_bar.addStretch(1)
-        root.addLayout(filter_bar)
+        self.show_manual.toggled.connect(self._apply_filter)
+        for cb in (self.show_used_only, self.show_unmatched, self.show_bestguess,
+                   self.show_exact, self.show_manual):
+            filt.addWidget(cb)
+        filt.addStretch(1)
+        root.addLayout(filt)
 
-        splitter = QSplitter(Qt.Vertical)
+        # Main table (7 columns, no section headers, no review pane)
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.itemSelectionChanged.connect(self._on_selection_changed)
-        splitter.addWidget(self.table)
-        self.review_pane = TranslationReviewPane()
-        self.review_pane.entry_modified.connect(self._on_entry_modified)
-        splitter.addWidget(self.review_pane)
-        splitter.setStretchFactor(0, 4)
-        splitter.setStretchFactor(1, 1)
-        root.addWidget(splitter)
+        self.table.cellDoubleClicked.connect(self._on_double_click)
+        root.addWidget(self.table)
 
-        action_bar = QHBoxLayout()
-        self.bulk_accept_btn = QPushButton("Accept all Best-Guess in view")
-        self.bulk_accept_btn.clicked.connect(self._on_bulk_accept_best_guess)
-        action_bar.addWidget(self.bulk_accept_btn)
+        # Bottom action bar
+        action = QHBoxLayout()
+        self.bulk_btn = QPushButton("Accept all Best-Guess in view")
+        self.bulk_btn.clicked.connect(self._on_bulk_accept)
+        action.addWidget(self.bulk_btn)
         self.save_btn = QPushButton("Save Overrides")
         font = self.save_btn.font()
         font.setBold(True)
         self.save_btn.setFont(font)
         self.save_btn.clicked.connect(self._on_save)
-        action_bar.addWidget(self.save_btn)
-        action_bar.addStretch(1)
-        sep = QFrame()
-        sep.setFrameShape(QFrame.VLine)
-        sep.setFrameShadow(QFrame.Sunken)
-        action_bar.addWidget(sep)
+        action.addWidget(self.save_btn)
+        action.addStretch(1)
         self.export_btn = QPushButton("Export Review CSV")
-        self.export_btn.clicked.connect(self._on_export_csv)
-        action_bar.addWidget(self.export_btn)
+        self.export_btn.clicked.connect(self._on_export)
+        action.addWidget(self.export_btn)
         self.reseed_btn = QPushButton("Reseed from Catalog...")
-        self.reseed_btn.setToolTip(
-            "Rebuild the translation map from VDT_CODES.xlsx and ODOT_CODES.xlsx.\n"
-            "This DISCARDS all manual overrides."
-        )
         self.reseed_btn.clicked.connect(self._on_reseed)
-        action_bar.addWidget(self.reseed_btn)
-        root.addLayout(action_bar)
+        action.addWidget(self.reseed_btn)
+        root.addLayout(action)
 
     def showEvent(self, event):
-        self._refresh_source_label()
-        self._refresh_used_counts()
-        self._populate_table()
-        self._refresh_target_default()
+        self._safe_refresh()
         super().showEvent(event)
 
-    def _refresh_source_label(self):
+    def _safe_refresh(self):
+        try:
+            self._refresh_source()
+            self._refresh_used()
+            self._refresh_map()
+            self._populate()
+            self._refresh_target()
+            self._update_status()
+        except Exception as e:
+            log.exception("translation tab refresh failed: %s", e)
+            self.status_lbl.setText(f"<b style='color:red;'>Error: {e}</b>")
+
+    def _refresh_source(self):
         parent = self._parent_main
-        if parent is None or not hasattr(parent, "rows") or not parent.rows:
+        if parent is None or not getattr(parent, "rows", None):
             self.source_lbl.setText("<b>(no file loaded)</b>")
             return
         cs = getattr(parent, "codeset", None)
-        if not cs:
-            self.source_lbl.setText("<b>(no codeset)</b>")
-            return
-        name = str(getattr(cs, "name", "vdt")).upper()
-        self.source_lbl.setText(f"<b>{name}</b> (auto-detected)")
+        name = str(getattr(cs, "name", "vdt")).upper() if cs else "VDT"
+        self.source_lbl.setText(f"<b>{name}</b>")
 
-    def _refresh_target_default(self):
+    def _refresh_target(self):
         parent = self._parent_main
         if parent is None:
             return
@@ -179,194 +215,118 @@ class TranslationTab(QWidget):
             return
         src = str(getattr(cs, "name", "vdt")).lower()
         target = "ODOT" if src == "vdt" else "VDT"
-        if self.target_dialect.currentText() != target:
-            self.target_dialect.blockSignals(True)
-            self.target_dialect.setCurrentText(target)
-            self.target_dialect.blockSignals(False)
+        if self.target_combo.currentText() != target:
+            self.target_combo.blockSignals(True)
+            self.target_combo.setCurrentText(target)
+            self.target_combo.blockSignals(False)
 
-    def _refresh_used_counts(self):
+    def _refresh_used(self):
         parent = self._parent_main
-        if parent is None or not hasattr(parent, "rows") or not parent.rows:
+        if parent is None or not getattr(parent, "rows", None):
             self._used_counts = {}
             return
         cs = getattr(parent, "codeset", None)
         dialect = str(getattr(cs, "name", "odot")).lower() if cs else "odot"
         self._used_counts = analyze_used_codes(parent.rows, dialect=dialect)
 
-    def refresh_map(self):
+    def _refresh_map(self):
         try:
             self._map_data = tm.load()
-        except FileNotFoundError:
-            QMessageBox.warning(
-                self, "Translation Map Missing",
-                "app/data/translation_map.json not found.\n"
-                "Run reseed_translation_map.bat or apply Phase 1 first."
-            )
-            return
         except Exception as e:
-            QMessageBox.critical(self, "Load Error", f"Failed to load translation map:\n{e}")
-            return
-        self._refresh_used_counts()
-        self._populate_table()
+            log.exception("map load failed: %s", e)
+            self._map_data = {"entries": []}
 
-    def _populate_table(self):
+    def _update_status(self):
+        n_entries = len(self._map_data.get("entries", []))
+        parent = self._parent_main
+        rows = len(parent.rows) if (parent and getattr(parent, "rows", None)) else 0
+        used = len(self._used_counts)
+        if n_entries == 0:
+            self.status_lbl.setText(
+                "<b style='color:#cc4400;'>Translation map is empty.</b> "
+                "Click <b>Reseed from Catalog...</b> below."
+            )
+        elif rows == 0:
+            self.status_lbl.setText(
+                f"<b>Map:</b> {n_entries} entries. <b>No file loaded.</b>"
+            )
+        else:
+            self.status_lbl.setText(
+                f"<b>Map:</b> {n_entries} entries &nbsp;|&nbsp; "
+                f"<b>File:</b> {rows} rows &nbsp;|&nbsp; "
+                f"<b>Unique codes in file:</b> {used}"
+            )
+
+    def _populate(self):
         entries = self._map_data.get("entries", [])
         self.table.setRowCount(0)
-        used, other = [], []
-        for e in entries:
-            v = (e.get("vdt") or {}).get("code", "").upper()
-            o = (e.get("odot") or {}).get("code", "").upper()
-            if v in self._used_counts or o in self._used_counts:
-                used.append(e)
-            else:
-                other.append(e)
+        for entry in sorted(entries, key=lambda e: (
+            (e.get("vdt") or {}).get("code", "") or (e.get("odot") or {}).get("code", "")
+        )):
+            self._append_row(entry)
+        self._apply_filter()
 
-        def usage_key(entry):
-            v = (entry.get("vdt") or {}).get("code", "").upper()
-            o = (entry.get("odot") or {}).get("code", "").upper()
-            count = max(self._used_counts.get(v, 0), self._used_counts.get(o, 0))
-            return (-count, v or o)
-
-        used.sort(key=usage_key)
-        other.sort(key=lambda e: ((e.get("vdt") or {}).get("code", "") or (e.get("odot") or {}).get("code", "")).upper())
-
-        if used:
-            self._insert_section_header(f"USED IN LOADED FILE ({len(used)} codes)")
-            for e in used:
-                self._append_entry_row(e)
-        if other:
-            self._insert_section_header(f"OTHER CATALOG CODES ({len(other)} codes)")
-            for e in other:
-                self._append_entry_row(e)
-        self._apply_filters()
-
-    def _insert_section_header(self, label):
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        item = QTableWidgetItem(label)
-        font = QFont()
-        font.setBold(True)
-        item.setFont(font)
-        item.setBackground(QBrush(QColor(220, 220, 230)))
-        item.setFlags(Qt.ItemIsEnabled)
-        self.table.setItem(row, 0, item)
-        self.table.setSpan(row, 0, 1, len(COLUMNS))
-
-    def _append_entry_row(self, entry):
+    def _append_row(self, entry):
         row = self.table.rowCount()
         self.table.insertRow(row)
         vdt = entry.get("vdt") or {}
         odot = entry.get("odot") or {}
-        confidence = entry.get("confidence", "unmatched")
-        is_dirty = entry.get("id") in self._dirty_entry_ids
+        conf = entry.get("confidence", "unmatched")
         v_code = vdt.get("code", "")
         o_code = odot.get("code", "")
-        usage_count = max(
+        count = max(
             self._used_counts.get(v_code.upper(), 0),
             self._used_counts.get(o_code.upper(), 0),
         )
         values = [
-            "\u25CF" if is_dirty else "",
-            "*" if usage_count > 0 else "",
-            str(usage_count) if usage_count > 0 else "",
-            v_code, vdt.get("type", ""), vdt.get("description", ""),
-            o_code, odot.get("type", ""), odot.get("description", ""),
-            short_label(entry), describe(entry),
+            v_code, vdt.get("description", ""),
+            o_code, odot.get("description", ""),
+            short_label(entry), str(count) if count else "",
+            entry.get("notes", ""),
         ]
-        color = CONFIDENCE_COLORS.get(confidence)
+        color = CONFIDENCE_COLORS.get(conf)
         for col, val in enumerate(values):
             item = QTableWidgetItem(str(val))
-            if color is not None:
+            if color:
                 item.setBackground(QBrush(color))
             item.setData(Qt.UserRole, entry.get("id"))
             self.table.setItem(row, col, item)
 
-    def _apply_filters(self):
+    def _apply_filter(self):
         search = self.search_box.text().strip().lower()
-        type_filter = None
-        if search.startswith("type:"):
-            type_filter = search[5:].strip()
-            search = ""
-
         for row in range(self.table.rowCount()):
-            item0 = self.table.item(row, 0)
-            if item0 is None:
+            item = self.table.item(row, 0)
+            if item is None:
                 continue
-            if self.table.columnSpan(row, 0) > 1:
-                continue
-            entry_id = item0.data(Qt.UserRole)
+            entry_id = item.data(Qt.UserRole)
             entry = self._find_entry(entry_id)
             if entry is None:
-                self.table.setRowHidden(row, True)
                 continue
-            confidence = entry.get("confidence", "unmatched")
-            is_manual = entry.get("user_override", False)
             visible = True
+            conf = entry.get("confidence", "unmatched")
+            is_manual = entry.get("user_override", False)
             if is_manual and not self.show_manual.isChecked():
                 visible = False
             elif not is_manual:
-                if confidence == "exact" and not self.show_exact.isChecked():
+                if conf == "exact" and not self.show_exact.isChecked():
                     visible = False
-                elif confidence == "best-guess" and not self.show_best.isChecked():
+                elif conf == "best-guess" and not self.show_bestguess.isChecked():
                     visible = False
-                elif confidence == "unmatched" and not self.show_unmatched.isChecked():
+                elif conf == "unmatched" and not self.show_unmatched.isChecked():
                     visible = False
-            if visible and not self.show_used.isChecked():
+            if visible and self.show_used_only.isChecked():
                 v = (entry.get("vdt") or {}).get("code", "").upper()
                 o = (entry.get("odot") or {}).get("code", "").upper()
-                if v in self._used_counts or o in self._used_counts:
-                    visible = False
-            if visible and type_filter:
-                vt = (entry.get("vdt") or {}).get("type", "").lower()
-                ot = (entry.get("odot") or {}).get("type", "").lower()
-                if type_filter not in vt and type_filter not in ot:
+                if v not in self._used_counts and o not in self._used_counts:
                     visible = False
             if visible and search:
                 vc = (entry.get("vdt") or {}).get("code", "").lower()
                 oc = (entry.get("odot") or {}).get("code", "").lower()
                 vd = (entry.get("vdt") or {}).get("description", "").lower()
                 od = (entry.get("odot") or {}).get("description", "").lower()
-                if search not in vc and search not in oc and search not in vd and search not in od:
+                if not any(search in x for x in (vc, oc, vd, od)):
                     visible = False
             self.table.setRowHidden(row, not visible)
-
-    def _on_selection_changed(self):
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            self._show_empty_pane_summary()
-            return
-        item = self.table.item(rows[0].row(), 0)
-        if item is None or self.table.columnSpan(rows[0].row(), 0) > 1:
-            self._show_empty_pane_summary()
-            return
-        entry_id = item.data(Qt.UserRole)
-        entry = self._find_entry(entry_id)
-        if entry is not None:
-            self.review_pane.load_entry(entry, self._all_odot_codes(), self._all_vdt_codes())
-
-    def _show_empty_pane_summary(self):
-        summary = build_usage_summary(self._used_counts, self._map_data)
-        if summary["unique_codes"] == 0:
-            html = (
-                "<h3>No file loaded</h3>"
-                "<p>Open a CSV/TXT file on the Raw Data tab to see usage analysis.</p>"
-            )
-        else:
-            html = (
-                f"<h3>Loaded file analysis</h3>"
-                f"<p><b>{summary['unique_codes']}</b> unique codes in your data:</p>"
-                f"<ul>"
-                f"<li>{summary['exact']} exact matches</li>"
-                f"<li>{summary['best_guess']} best-guess matches (review recommended)</li>"
-                f"<li>{summary['unmatched']} unmatched or missing from catalog</li>"
-                f"<li>{summary['manual']} manual overrides</li>"
-                f"</ul>"
-            )
-            if summary["not_in_map"]:
-                preview = ", ".join(summary["not_in_map"][:10])
-                more = f" ... +{len(summary['not_in_map']) - 10} more" if len(summary["not_in_map"]) > 10 else ""
-                html += f"<p><b>Codes not in catalog:</b><br>{preview}{more}</p>"
-        self.review_pane.show_summary(html)
 
     def _find_entry(self, entry_id):
         for e in self._map_data.get("entries", []):
@@ -382,42 +342,39 @@ class TranslationTab(QWidget):
                 codes.add(o["code"])
         return sorted(codes)
 
-    def _all_vdt_codes(self):
-        codes = set()
-        for e in self._map_data.get("entries", []):
-            v = e.get("vdt")
-            if v and v.get("code"):
-                codes.add(v["code"])
-        return sorted(codes)
-
-    def _on_entry_modified(self, entry_id):
-        if entry_id:
-            self._dirty_entry_ids.add(entry_id)
-        self._populate_table()
-        self.map_modified.emit()
+    def _on_double_click(self, row, col):
+        item = self.table.item(row, 0)
+        if item is None:
+            return
+        entry_id = item.data(Qt.UserRole)
+        entry = self._find_entry(entry_id)
+        if entry is None:
+            return
+        dlg = EntryEditDialog(entry, self._all_odot_codes(), self)
+        if dlg.exec():
+            dlg.apply_changes()
+            self._dirty_ids.add(entry.get("id"))
+            self._populate()
+            self.map_modified.emit()
 
     def _on_translate(self):
         from app.services.description_translator import translate_rows
         parent = self._parent_main
-        if parent is None or not hasattr(parent, "rows") or not parent.rows:
+        if parent is None or not getattr(parent, "rows", None):
             QMessageBox.information(self, "Translate",
                 "No rows loaded. Open a CSV/TXT file on the Raw Data tab first.")
             return
         cs = getattr(parent, "codeset", None)
         src = str(getattr(cs, "name", "vdt")).upper() if cs else "VDT"
-        tgt = self.target_dialect.currentText()
+        tgt = self.target_combo.currentText()
         if src == tgt:
-            QMessageBox.warning(self, "Same Source and Target",
-                f"Source and target are both {src}. Nothing to translate.")
+            QMessageBox.warning(self, "Same Source",
+                f"Source and target are both {src}.")
             return
         direction = "vdt_to_odot" if src == "VDT" else "odot_to_vdt"
-        resp = QMessageBox.question(
-            self, "Translate Loaded Rows",
-            f"Translate {len(parent.rows)} rows from {src} to {tgt}?\n\n"
-            "This rewrites the Description (D) column in place.\n"
-            "Point numbers, N, E, and Z are NEVER modified.",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-        )
+        resp = QMessageBox.question(self, "Translate",
+            f"Translate {len(parent.rows)} rows from {src} to {tgt}?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if resp != QMessageBox.Yes:
             return
         try:
@@ -425,59 +382,80 @@ class TranslationTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Translation Failed", str(e))
             return
-        if hasattr(parent, "results") and hasattr(parent, "codeset"):
+        if hasattr(parent, "_populate_table"):
             try:
-                from app.services.validator import validate_rows as _validate
-                from app.services.suggester import build_suggestions as _suggest
-                parent.results = _validate(parent.rows, parent.codeset)
-                parent.suggestions = _suggest(parent.rows, parent.codeset, parent.results)
+                from app.services.validator import validate_rows as _v
+                from app.services.suggester import build_suggestions as _s
+                parent.results = _v(parent.rows, parent.codeset)
+                parent.suggestions = _s(parent.rows, parent.codeset, parent.results)
+                parent._populate_table()
+                if hasattr(parent, "modified_tab"):
+                    parent.modified_tab.refresh_from_parent()
             except Exception:
                 pass
-        if hasattr(parent, "_populate_table"):
-            parent._populate_table()
-        if hasattr(parent, "modified_tab"):
-            parent.modified_tab.refresh_from_parent()
         QMessageBox.information(self, "Translation Complete",
-            f"Translation {src} -> {tgt} applied.\n\n"
-            f"Rows changed: {summary['rows_changed']}\n"
-            f"Code changes: {summary['code_changes']}\n"
-            f"Linework changes: {summary['linework_changes']}")
+            f"{src} -> {tgt}: {summary['rows_changed']} rows changed, "
+            f"{summary['code_changes']} code changes, "
+            f"{summary['linework_changes']} linework changes.")
 
-    def _on_bulk_accept_best_guess(self):
+    def _on_bulk_accept(self):
         targets = []
         for row in range(self.table.rowCount()):
             if self.table.isRowHidden(row):
                 continue
-            if self.table.columnSpan(row, 0) > 1:
-                continue
             item = self.table.item(row, 0)
             if item is None:
                 continue
-            entry_id = item.data(Qt.UserRole)
-            entry = self._find_entry(entry_id)
+            entry = self._find_entry(item.data(Qt.UserRole))
             if entry and entry.get("confidence") == "best-guess" and not entry.get("user_override"):
                 targets.append(entry)
         if not targets:
             QMessageBox.information(self, "Nothing to Accept",
-                "No best-guess entries are currently visible.")
+                "No best-guess entries visible.")
             return
-        resp = QMessageBox.question(self, "Accept All Best-Guess",
-            f"Mark all {len(targets)} visible best-guess entries as manual overrides?\n\n"
-            "You can still edit individual entries afterward.",
+        resp = QMessageBox.question(self, "Accept All",
+            f"Mark all {len(targets)} visible best-guess entries as manual overrides?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if resp != QMessageBox.Yes:
             return
         for entry in targets:
             entry["user_override"] = True
             entry["confidence"] = "manual"
-            self._dirty_entry_ids.add(entry.get("id"))
-        self._populate_table()
+            self._dirty_ids.add(entry.get("id"))
+        self._populate()
         self.map_modified.emit()
+
+    def _on_save(self):
+        try:
+            tm.save(self._map_data)
+        except Exception as e:
+            QMessageBox.critical(self, "Save Failed", str(e))
+            return
+        self._dirty_ids.clear()
+        QMessageBox.information(self, "Saved",
+            "Overrides written to translation_map.json")
+
+    def _on_export(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV",
+            "translation_review.csv", "CSV (*.csv)")
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(COLUMNS)
+            for row in range(self.table.rowCount()):
+                if self.table.isRowHidden(row):
+                    continue
+                w.writerow([
+                    (self.table.item(row, c).text() if self.table.item(row, c) else "")
+                    for c in range(len(COLUMNS))
+                ])
+        QMessageBox.information(self, "Exported", f"Wrote {path}")
 
     def _on_reseed(self):
         resp = QMessageBox.question(self, "Reseed from Catalog",
-            "<b>This will rebuild the translation map from VDT_CODES.xlsx + ODOT_CODES.xlsx.</b><br><br>"
-            "All manual overrides will be <b>permanently discarded</b>.<br><br>Continue?",
+            "Rebuild the translation map from VDT_CODES.xlsx + ODOT_CODES.xlsx. "
+            "All manual overrides will be permanently discarded. Continue?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if resp != QMessageBox.Yes:
             return
@@ -487,35 +465,6 @@ class TranslationTab(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Reseed Failed", str(e))
             return
-        self._dirty_entry_ids.clear()
-        self.refresh_map()
-        QMessageBox.information(self, "Reseed Complete", "Translation map regenerated.")
-
-    def _on_export_csv(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Review CSV", "translation_map_review.csv", "CSV (*.csv)")
-        if not path:
-            return
-        with open(path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(COLUMNS)
-            for row in range(self.table.rowCount()):
-                if self.table.isRowHidden(row):
-                    continue
-                if self.table.columnSpan(row, 0) > 1:
-                    continue
-                writer.writerow([
-                    (self.table.item(row, c).text() if self.table.item(row, c) else "")
-                    for c in range(len(COLUMNS))
-                ])
-        QMessageBox.information(self, "Export Complete", f"Wrote {path}")
-
-    def _on_save(self):
-        try:
-            tm.save(self._map_data)
-        except Exception as e:
-            QMessageBox.critical(self, "Save Failed", str(e))
-            return
-        self._dirty_entry_ids.clear()
-        self._populate_table()
-        QMessageBox.information(self, "Saved", "Overrides written to translation_map.json")
+        self._dirty_ids.clear()
+        self._safe_refresh()
+        QMessageBox.information(self, "Done", "Translation map regenerated.")

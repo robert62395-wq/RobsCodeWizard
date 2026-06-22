@@ -31,9 +31,6 @@ from app.ui.modified_data_tab import ModifiedDataTab
 # v0.4.2: Phase 2 Translation tab + Convert Line Connect Codes dialog
 from app.ui.translation_tab import TranslationTab
 from app.ui.convert_line_connect_dialog import ConvertLineConnectDialog
-# v0.5.2 status bar + help icons
-from app.services.status_bar_helper import format_permanent_status
-from app.ui.help_icon import HelpIcon
 
 COLUMNS = ["Point number", "Original Description", "Edited Description",
            "Valid", "Issues/Warnings", "Notes", "Suggestion"]
@@ -77,9 +74,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.translation_tab, "Translation")
         self.modified_tab = ModifiedDataTab(self)
         self.tabs.addTab(self.modified_tab, "Modified Data")
-        # v0.5.2 status bar init
-        sb = self.statusBar()
-        sb.showMessage("Ready")
 
     def _build_menu(self):
         bar = self.menuBar()
@@ -619,26 +613,6 @@ class MainWindow(QMainWindow):
     def _handle_zero_elevation_prompt(self):
         """v0.3.9.5.0.9: deprecated. Zero-elev rows are ALWAYS kept and flagged."""
         return
-
-    def _update_status_bar(self):
-        """v0.5.2: refresh permanent status bar text."""
-        try:
-            text = format_permanent_status(
-                getattr(self, "codeset", None),
-                getattr(self, "source_path", None),
-                getattr(self, "rows", None),
-                getattr(self, "results", None),
-            )
-            self.statusBar().showMessage(text)
-        except Exception:
-            pass
-
-    def _flash_status(self, message, msec=5000):
-        """v0.5.2: transient status message."""
-        try:
-            self.statusBar().showMessage(message, msec)
-        except Exception:
-            pass
 
     def _populate_table(self):
         """v0.3.9.4.1: bulk-update guard (suppress repaints + sort) for big files."""
