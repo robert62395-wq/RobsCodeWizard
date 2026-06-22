@@ -1,31 +1,34 @@
-## v0.4.8 - 2026-06-22 - Small fixes (Option A)
+## v0.5.1 - 2026-06-22 - Phase 1 of 7: Translation Tab UX Rebuild
 
-### Fixed
-- Title bar showed "v0.4.x\n (VDT)" with literal backslash-n. Root cause
-  was previous build scripts embedding version.txt content with literal
-  "\\n" instead of a real newline. The version loader's .strip()
-  doesn't remove literal escape sequences.
-- After "Check for Updates" installed the new version, the app would
-  not relaunch. Root cause was build/installer.iss [Run] entry using
-  "skipifsilent" - Inno Setup correctly skipped the relaunch step
-  because the updater calls the installer with /VERYSILENT.
-- About dialog logo was 140px tall. Bumped to 220px.
+### Removed Friction
+- Source dropdown replaced with auto-detected read-only label.
+- Target dropdown defaults to opposite of source.
+- Apply Translation button simplified to "Translate Loaded Rows".
 
 ### Added
-- New [Run] entry in build/installer.iss that fires ONLY during silent
-  installs (Check: WizardSilent). The original interactive entry is
-  untouched, so fresh installs still show the wizard's checkbox.
-- `tests/test_version_loader.py` (3 tests covering the \\n bug regression)
+- `app/services/usage_analyzer.py` - analyze_used_codes() counts how many
+  times each point code appears in parent.rows. build_usage_summary()
+  cross-references against the translation map.
+- `app/services/match_basis_descriptor.py` - describe() and short_label()
+  produce human-readable match-basis explanations.
+- Two-section table on Translation tab: USED IN LOADED FILE (sorted by
+  frequency) + OTHER CATALOG CODES (alphabetical).
+- Dirty indicator (bullet) for entries with unsaved overrides.
+- Why column with match-basis explanation per entry.
+- Used indicator column + Count column.
+- Bulk "Accept all Best-Guess in view" action.
+- Empty-state summary in review pane (Option C - used-in-file stats).
+- Manual edits to ANY entry are supported (not just ODOT side).
+- `tests/test_usage_analyzer.py` (10 tests)
+- `tests/test_match_basis_descriptor.py` (8 tests)
 
 ### Changed
-- `app/__init__.py` - defensive version loader strips literal "\\n",
-  "\\r", "\\r\\n" escape sequences in addition to whitespace.
-- `resources/version.txt` - rewritten clean (just "0.4.8\n" with real newline).
-- `app/ui/main_window.py` - About dialog logo height 140 -> 220.
+- `app/ui/translation_tab.py` - full rebuild.
+- `app/ui/translation_review_pane.py` - wide bottom-mounted layout
+  with side-by-side VDT/ODOT editors and full-width notes.
 
 ### Notes
-- installer.iss patch only affects installers built FROM this release
-  forward. The currently-installed v0.4.7 EXE still has the old behavior.
-  Auto-relaunch will work starting with v0.4.9 (or v0.4.8.1) updates.
-- Idempotent patchers via sentinel strings ("v0.4.8 silent-install
-  relaunch" in installer.iss, "v0.4.8 logo bump" in main_window.py).
+- showEvent triggers refresh of source label, used counts, target default,
+  and table repopulation. No live signal connection to Modified Data tab.
+- map_modified signal still fires after Save Overrides or Accept-all-best
+  for external listeners.

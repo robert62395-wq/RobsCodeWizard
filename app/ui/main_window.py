@@ -426,7 +426,7 @@ class MainWindow(QMainWindow):
             logo_label = QLabel()
             pix = QPixmap(str(logo_path))
             if not pix.isNull():
-                pix = pix.scaledToHeight(220, Qt.SmoothTransformation)  # v0.4.8 logo bump
+                pix = pix.scaledToHeight(140, Qt.SmoothTransformation)
                 logo_label.setPixmap(pix)
                 logo_label.setAlignment(Qt.AlignCenter)
                 layout.addWidget(logo_label)
