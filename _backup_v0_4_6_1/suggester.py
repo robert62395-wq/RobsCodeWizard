@@ -1,4 +1,4 @@
-"""Smart Suggestion engine (v0.4.6.1: check full token before stripped)."""
+"""Smart Suggestion engine (v0.4.6: orphans behind '/')."""
 import difflib
 
 from app.services.size_bearing import is_size_bearing
@@ -49,6 +49,7 @@ def build_suggestions(rows, codes_or_codeset, results=None):
             suggestions.append("")
             continue
 
+        # v0.4.6: separate existing '/' tail
         if "/" in desc:
             main, _, existing_tail = desc.partition("/")
             main = main.strip()
@@ -69,18 +70,18 @@ def build_suggestions(rows, codes_or_codeset, results=None):
                 i_tok += 1
                 continue
             base, _ = _split_suffix(token)
-            # v0.4.6.1: check full token FIRST, then stripped fallback
-            if token in valid_set or base in valid_set:
+            if base in valid_set:
                 kept.append(token)
+                # v0.4.6: if size-bearing, absorb the next non-code token as size
                 if is_size_bearing(token) and i_tok + 1 < len(tokens):
                     next_tok = tokens[i_tok + 1]
-                    next_base, _ = _split_suffix(next_tok)
-                    if next_tok not in grammar_set and next_tok not in valid_set and next_base not in valid_set:
+                    if next_tok not in grammar_set and _split_suffix(next_tok)[0] not in valid_set:
                         kept.append(next_tok)
                         i_tok += 2
                         continue
                 i_tok += 1
                 continue
+            # Unknown token: try fuzzy match first
             replacement = suggest(token, valid_codes)
             if replacement and replacement.upper() != token:
                 kept.append(replacement)

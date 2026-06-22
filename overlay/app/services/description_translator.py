@@ -1,4 +1,4 @@
-"""End-to-end description translator: parser + code map + grammar map."""
+"""End-to-end description translator (v0.4.6: emits size tokens)."""
 from __future__ import annotations
 
 from app.services.linework_parser import parse
@@ -18,10 +18,8 @@ def translate_description(description, direction, map_data=None):
 
     out_tokens = []
     info = {
-        "code_changes": 0,
-        "linework_changes": 0,
-        "ambiguous_tokens": [],
-        "unmatched_codes": [],
+        "code_changes": 0, "linework_changes": 0,
+        "ambiguous_tokens": [], "unmatched_codes": [],
     }
 
     for entry in entries:
@@ -32,6 +30,10 @@ def translate_description(description, direction, map_data=None):
         if confidence == "unmatched":
             info["unmatched_codes"].append(code)
         out_tokens.append(new_code)
+
+        # v0.4.6: emit size token if size-bearing code had one absorbed
+        if entry.get("size"):
+            out_tokens.append(entry["size"])
 
         for lc in entry["line_connects"]:
             new_lc, ambiguous = translate_linework_token(lc, direction=direction)
@@ -46,11 +48,8 @@ def translate_description(description, direction, map_data=None):
 
 def translate_rows(rows, direction, map_data=None):
     summary = {
-        "rows_changed": 0,
-        "code_changes": 0,
-        "linework_changes": 0,
-        "ambiguous_rows": [],
-        "unmatched_codes": set(),
+        "rows_changed": 0, "code_changes": 0, "linework_changes": 0,
+        "ambiguous_rows": [], "unmatched_codes": set(),
     }
     for row in rows:
         desc_key = "D" if "D" in row else "description"

@@ -1,4 +1,4 @@
-"""Row validation (v0.4.6.1: check full token before stripped suffix)."""
+"""Row validation (v0.4.6: size-bearing + '/' comment tail)."""
 from typing import List
 
 from app.services.size_bearing import is_size_bearing
@@ -36,6 +36,7 @@ def validate_rows(rows, codes_or_codeset):
         if z == 0.0:
             issues.append("Zero elevation")
 
+        # v0.4.6: anything after '/' is a comment - don't validate it
         main = desc.partition("/")[0].strip() if "/" in desc else desc
 
         bad_tokens = []
@@ -49,11 +50,12 @@ def validate_rows(rows, codes_or_codeset):
             if token in grammar_set:
                 i += 1
                 continue
-            # v0.4.6.1: check full token FIRST, then stripped fallback
-            if token in valid_set or _strip_suffix(token) in valid_set:
+            stripped = _strip_suffix(token)
+            if stripped in valid_set:
+                # v0.4.6: if size-bearing, absorb the next token as size
                 if is_size_bearing(token) and i + 1 < len(tokens):
                     next_tok = tokens[i + 1]
-                    if next_tok not in grammar_set and next_tok not in valid_set and _strip_suffix(next_tok) not in valid_set:
+                    if next_tok not in grammar_set and _strip_suffix(next_tok) not in valid_set:
                         i += 2
                         continue
                 i += 1
