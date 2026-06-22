@@ -1,3 +1,32 @@
+## v0.5.2.1 - 2026-06-22 - Status bar foundation
+
+### Added
+- `app/services/status_bar_helper.py` - format_permanent_status() helper that
+  builds the persistent left-aligned status bar text from codeset + source path
+  + rows + results. Uses "Points:" label (not "Rows:") per locked spec, with
+  thousands separators on point counts.
+- `app/ui/help_icon.py` - reusable HelpIcon widget (small `?` toolbutton)
+  that pops up a HelpDialog with HTML content and a "Don't show again"
+  checkbox persisted in settings.
+- `app/ui/help_dialogs.py` - HTML help content for 11 contextual topics:
+  code_set, linework_fix, translate_source_target, translate_button,
+  translate_filter_used, translate_bulk_accept, translate_reseed,
+  export_use_numeric, point_offset, elevation_offset, convert_line_connect.
+
+### Changed
+- `app/ui/main_window.py` - patched in place (idempotent, sentinel
+  "v0.5.2 status bar"):
+  - Added imports for HelpIcon and format_permanent_status
+  - Added QStatusBar initialization at end of `_build_ui`
+  - Added `_update_status_bar` and `_flash_status` helper methods
+
+### Notes
+- This is the foundation patch. Wire-up calls to `self._update_status_bar()`
+  in on_open_file / _on_revalidation_done / _maybe_restore_session are
+  deferred to v0.5.2.2, which will also add tooltips and place the 11 ?
+  icons next to advanced controls.
+- Patcher is idempotent via the sentinel string. Safe to re-run.
+- Original main_window.py backed up to _backup_v0_5_2/main_window.py.
 ## v0.5.1 - 2026-06-22 - Phase 1 of 7: Translation Tab UX Rebuild
 
 ### Removed Friction
