@@ -1,31 +1,31 @@
-## v0.4.7 - 2026-06-22 - Phase 7: Dialect-aware export dispatch
+## v0.4.8 - 2026-06-22 - Small fixes (Option A)
+
+### Fixed
+- Title bar showed "v0.4.x\n (VDT)" with literal backslash-n. Root cause
+  was previous build scripts embedding version.txt content with literal
+  "\\n" instead of a real newline. The version loader's .strip()
+  doesn't remove literal escape sequences.
+- After "Check for Updates" installed the new version, the app would
+  not relaunch. Root cause was build/installer.iss [Run] entry using
+  "skipifsilent" - Inno Setup correctly skipped the relaunch step
+  because the updater calls the installer with /VERYSILENT.
+- About dialog logo was 140px tall. Bumped to 220px.
 
 ### Added
-- `app/services/grammar_normalizer.py` - to_vdt(), to_odot_alpha(),
-  to_odot_numeric() normalizers. Maps any line-connect token to the
-  target grammar.
-- `tests/test_grammar_normalizer.py` (17 tests)
-- `tests/test_odot_exporter.py` (10 tests covering all 3 dispatch paths)
+- New [Run] entry in build/installer.iss that fires ONLY during silent
+  installs (Check: WizardSilent). The original interactive entry is
+  untouched, so fresh installs still show the wizard's checkbox.
+- `tests/test_version_loader.py` (3 tests covering the \\n bug regression)
 
 ### Changed
-- `app/services/odot_exporter.py` - REPLACED. New explicit functions:
-  export_vdt_to_civil3d, export_odot_to_civil3d, export_odot_to_openroads.
-  Each is dialect-aware. Size tokens and '/' comment tails preserved.
-  Backward-compat aliases export_civil3d / export_openroads kept.
-- `app/ui/export_tab.py` - REPLACED. Detects parent.codeset.name and
-  reconfigures UI: VDT mode disables OpenRoads with tooltip; ODOT mode
-  enables both with grammar-specific button labels.
+- `app/__init__.py` - defensive version loader strips literal "\\n",
+  "\\r", "\\r\\n" escape sequences in addition to whitespace.
+- `resources/version.txt` - rewritten clean (just "0.4.8\n" with real newline).
+- `app/ui/main_window.py` - About dialog logo height 140 -> 220.
 
-### Fixes
-- Bug 4 (pre-v1.0): Dialect-aware export grammar dispatch.
-  - VDT -> Civil3D: VDT grammar (letters only)
-  - ODOT -> Civil3D: ODOT alphabetic
-  - ODOT -> OpenRoads: ODOT numeric (default) or alphabetic
-  - VDT -> OpenRoads: blocked at UI with explanatory tooltip
-
-### v0.4.x track complete
-All four pre-v1.0 bugs from the bug list are now fixed:
-  - v0.4.4.1: PL added to ODOT catalog
-  - v0.4.6:   size-bearing codes + suggestion column cleanup
-  - v0.4.7:   dialect-aware export dispatch
-Next stop: v1.0 final polish.
+### Notes
+- installer.iss patch only affects installers built FROM this release
+  forward. The currently-installed v0.4.7 EXE still has the old behavior.
+  Auto-relaunch will work starting with v0.4.9 (or v0.4.8.1) updates.
+- Idempotent patchers via sentinel strings ("v0.4.8 silent-install
+  relaunch" in installer.iss, "v0.4.8 logo bump" in main_window.py).
