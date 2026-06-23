@@ -52,5 +52,4 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
 ; v0.4.8 silent-install relaunch (auto-relaunch after updater installs)
-; v0.5.2.2 installer relaunch race fix - postinstall flag required
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait postinstall runasoriginaluser; Check: WizardSilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: WizardSilent
