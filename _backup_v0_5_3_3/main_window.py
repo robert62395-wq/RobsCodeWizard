@@ -17,9 +17,6 @@ from PySide6.QtGui import QColor, QAction, QDesktopServices
 from PySide6.QtCore import Qt, QUrl
 from app import __version__
 from app.services.file_parser import parse_file
-from app.services.file_parser import parse_file_with_errors  # v0.5.3.3
-from app.services.recovery_timer import RecoveryTimer  # v0.5.3.3
-from app.ui.parse_error_dialog import ParseErrorDialog  # v0.5.3.3
 from app.services.validator import validate_rows
 from app.services.suggester import build_suggestions
 from app.services.catalog_loader import load_catalog
@@ -67,22 +64,7 @@ class MainWindow(QMainWindow):
         self._sync_window_title()
         if not self.safe_mode:
             self._maybe_restore_session()
-            # v0.5.3.3 wireup: auto-save recovery timer
-        try:
-            self._recovery_timer = RecoveryTimer(self)
-            self._recovery_timer.set_save_callback(
-                lambda: recovery.save_session(
-                    self.rows,
-                    source_path=self.source_path,
-                    suggestions=self.suggestions,
-                )
-            )
-            if self.settings.get("auto_save_recovery", True):
-                self._recovery_timer.start()
-        except Exception as exc:
-            log.exception("RecoveryTimer init failed: %s", exc)
-            self._recovery_timer = None
-        if self.settings.get("check_on_startup", True):
+            if self.settings.get("check_on_startup", True):
                 self._start_update_check(silent=True)
 
     def _sync_window_title(self):
@@ -159,8 +141,6 @@ class MainWindow(QMainWindow):
         open_btn = QPushButton("Open CSV/TXT...")
         open_btn.clicked.connect(self.on_open_file)
         self._update_status_bar()
-        if getattr(self, '_recovery_timer', None) is not None:
-            self._recovery_timer.mark_dirty()  # v0.5.3.3 wireup
 
         linework_btn = QPushButton("Linework Fix")
         linework_btn.clicked.connect(self.on_linework_fix)
@@ -242,8 +222,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_reval_t0"):
             log.debug("[diag] end-to-end code-set switch: %.3fs", t5 - self._reval_t0)
             self._update_status_bar()  # v0.5.2.3
-            if getattr(self, '_recovery_timer', None) is not None:
-                self._recovery_timer.mark_dirty()  # v0.5.3.3 wireup
             
     def _on_revalidation_error(self, msg):
         """v0.3.9.5.1.6: revalidation worker raised."""
@@ -260,15 +238,7 @@ class MainWindow(QMainWindow):
             if not path: return
             self.source_path = path
             # Phase 3: dispatch to the right parser via the codeset
-            # v0.5.3.3 wireup: collect parse errors and show dialog if any
-            _parse_result = parse_file_with_errors(path, self.codeset)
-            self.rows = _parse_result.rows
-            if _parse_result.has_errors:
-                try:
-                    _dlg = ParseErrorDialog(_parse_result, source_path=path, parent=self)
-                    _dlg.exec()
-                except Exception as exc:
-                    log.exception("ParseErrorDialog failed: %s", exc)
+            self.rows = parse_file(path, self.codeset)
             # v0.3.9.5.0.9: sort by P (numeric where possible). Zero-elev rows are
             # kept and flagged yellow on both tabs - never auto-deleted.
             self.rows = sorted(self.rows, key=_p_sort_key)
@@ -292,14 +262,10 @@ class MainWindow(QMainWindow):
             if self.settings.get("auto_save_recovery", True):
                 recovery.save_session(self.rows, source_path=path, suggestions=self.suggestions)
                 self._update_status_bar()  # v0.5.2.3
-                if getattr(self, '_recovery_timer', None) is not None:
-                    self._recovery_timer.mark_dirty()  # v0.5.3.3 wireup
         except Exception as exc:
             log.exception("Failed to open file: %s", exc)
             self._error_dialog("Open failed", exc)
             self._update_status_bar()  # v0.5.2
-            if getattr(self, '_recovery_timer', None) is not None:
-                self._recovery_timer.mark_dirty()  # v0.5.3.3 wireup
 
     def on_linework_fix(self):
         """Phase 4 (v0.3.9.4): show the Linework Fix overlay instead of a dialog."""
@@ -361,8 +327,6 @@ class MainWindow(QMainWindow):
             self.modified_tab.refresh_from_parent()
         self.export_btn.setEnabled(bool(self.rows))
         self._update_status_bar()  # v0.5.2.3
-        if getattr(self, '_recovery_timer', None) is not None:
-            self._recovery_timer.mark_dirty()  # v0.5.3.3 wireup
         # v0.4.2: enable Tools actions on restore as well
         if hasattr(self, "_point_offset_action"):
             self._point_offset_action.setEnabled(bool(self.rows))
@@ -371,18 +335,8 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_convert_lc_action"):
             self._convert_lc_action.setEnabled(bool(self.rows))
             self._update_status_bar()  # v0.5.2
-            if getattr(self, '_recovery_timer', None) is not None:
-                self._recovery_timer.mark_dirty()  # v0.5.3.3 wireup
 
     def closeEvent(self, event):
-        # v0.5.3.3 wireup: stop recovery timer before close
-        try:
-            if getattr(self, '_recovery_timer', None) is not None:
-                self._recovery_timer.force_save_now()
-                self._recovery_timer.stop()
-        except Exception:
-            pass
-        
         try:
             if self.rows and self.settings.get("auto_save_recovery", True):
                 recovery.save_session(self.rows, source_path=self.source_path, suggestions=self.suggestions)

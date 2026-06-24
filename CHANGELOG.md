@@ -1,3 +1,35 @@
+## v0.5.3.3 - 2026-06-23 - v0.5.3.1 wire-up + latent export crash hotfix
+
+### Fixed
+- 🚨 `app/ui/export_tab.py` — was unpacking 2-tuple returns from
+  `export_vdt_to_civil3d`, `export_odot_to_civil3d`, and `export_odot_to_openroads`.
+  v0.5.3.1 changed those to 3-tuples; this was a latent runtime crash
+  that would fire the moment any user clicked an export button.
+  Now correctly unpacks `(written, conversions, errors)` and displays a
+  warning popup listing the first 10 row-level errors (if any).
+
+### Added
+- `app/services/file_parser.parse_file_with_errors()` — dispatcher that
+  returns a `ParseResult` so callers can collect row-level errors.
+  Legacy `parse_file()` preserved.
+- `app/ui/main_window.py`:
+  - `RecoveryTimer` created in `__init__`, started if
+    `auto_save_recovery` setting is True (default), stopped cleanly in
+    `closeEvent`.
+  - `on_open_file` now uses `parse_file_with_errors` and shows the
+    `ParseErrorDialog` after parse if any rows were skipped.
+  - `mark_dirty()` called after every `_update_status_bar()` so the
+    auto-save timer knows when to save.
+  - `closeEvent` calls `force_save_now()` + `stop()` on the timer.
+- `tests/test_file_parser_v0533.py` (4 tests)
+
+### Notes
+- Patchers idempotent via sentinel strings (`"v0.5.3.3 export errors"`,
+  `"v0.5.3.3 wireup"`). Backups in `_backup_v0_5_3_3/`.
+- v0.5.3.1 infrastructure (parse_errors, recovery_timer, parse_error_dialog)
+  now actively serves users.
+- ODOT parser still does not emit row-level errors; that's a v0.5.3.4
+  candidate.
 ## v0.5.3.2 - 2026-06-23 - Hotfix: legacy test_odot_exporter.py 3-tuple unpack
 
 ### Fixed

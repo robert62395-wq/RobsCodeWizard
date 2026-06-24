@@ -150,7 +150,7 @@ class ExportTab(QWidget):
         if not path:
             return
         try:
-            written, conversions, errors = exporter(rows, Path(path))  # v0.5.3.3 export errors
+            written, conversions = exporter(rows, Path(path))
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
             return
@@ -160,16 +160,6 @@ class ExportTab(QWidget):
             f"Grammar: {grammar_label}\n"
             f"Line-connect conversions: {conversions}"
         )
-        if errors:  # v0.5.3.3 export errors
-            preview = "\n".join(
-                f"  Row {e['row_index']} (Point {e['point']}): {e['error']}"
-                for e in errors[:10]
-            )
-            more = f"\n  ... and {len(errors) - 10} more" if len(errors) > 10 else ""
-            QMessageBox.warning(
-                self, "Export warnings",
-                f"{len(errors)} row(s) had errors and were skipped:\n\n{preview}{more}"
-            )
 
     def _on_export_openroads(self):
         rows = self._check_rows()
@@ -190,9 +180,9 @@ class ExportTab(QWidget):
         if not path:
             return
         try:
-            written, conversions, errors = export_odot_to_openroads(
+            written, conversions = export_odot_to_openroads(
                 rows, Path(path), use_numeric=self.or_use_numeric.isChecked()
-            )  # v0.5.3.3 export errors
+            )
         except Exception as e:
             QMessageBox.critical(self, "Export Failed", str(e))
             return
@@ -203,13 +193,3 @@ class ExportTab(QWidget):
             f"Grammar: ODOT {grammar}\n"
             f"Line-connect conversions: {conversions}"
         )
-        if errors:  # v0.5.3.3 export errors
-            preview = "\n".join(
-                f"  Row {e['row_index']} (Point {e['point']}): {e['error']}"
-                for e in errors[:10]
-            )
-            more = f"\n  ... and {len(errors) - 10} more" if len(errors) > 10 else ""
-            QMessageBox.warning(
-                self, "Export warnings",
-                f"{len(errors)} row(s) had errors and were skipped:\n\n{preview}{more}"
-            )
