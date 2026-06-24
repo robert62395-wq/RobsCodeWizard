@@ -1,29 +1,47 @@
-"""Translation map loader, validator, and accessor."""
-import json
-import shutil
-from datetime import datetime
+"""v0.5.3 patcher: add backup + safe_load to translation_map.py."""
+import ast
+import sys
 from pathlib import Path
-from typing import Optional
 
-SCHEMA_VERSION = "1.0"
-MAP_PATH = Path(__file__).parent.parent / "data" / "translation_map.json"
-BACKUP_PATH = Path(__file__).parent.parent / "data" / "translation_map.backup.json"
-BACKUP_TIMESTAMPED_DIR = Path(__file__).parent.parent / "data" / "translation_map_backups"
+TM = Path("app/services/translation_map.py")
+if not TM.exists():
+    print(f"[ERROR] {TM} not found.")
+    sys.exit(1)
 
-REQUIRED_TOP_KEYS = {"schema_version", "map_version", "generated", "entries"}
-REQUIRED_ENTRY_KEYS = {"id", "vdt", "odot", "confidence", "match_basis",
-                       "score", "user_override", "notes"}
-VALID_CONFIDENCE = {"exact", "best-guess", "unmatched", "manual"}
+src = TM.read_text(encoding="utf-8")
+SENTINEL = "v0.5.3 safe_load"
+if SENTINEL in src:
+    print(f"[OK] {TM} already patched.")
+    sys.exit(0)
 
+backup = Path("_backup_v0_5_3") / TM.name
+backup.parent.mkdir(parents=True, exist_ok=True)
+backup.write_text(src, encoding="utf-8")
+print(f"[OK] Backed up {TM}")
 
-def load(path: Path = MAP_PATH) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+# Add: import for shutil/datetime + BACKUP_PATH constant
+if "import shutil" not in src:
+    src = src.replace(
+        "import json\nfrom pathlib import Path",
+        "import json\nimport shutil\nfrom datetime import datetime\nfrom pathlib import Path"
+    )
+
+# Add BACKUP_PATH constant after MAP_PATH
+if "BACKUP_PATH" not in src:
+    src = src.replace(
+        'MAP_PATH = Path(__file__).parent.parent / "data" / "translation_map.json"',
+        'MAP_PATH = Path(__file__).parent.parent / "data" / "translation_map.json"\n'
+        'BACKUP_PATH = Path(__file__).parent.parent / "data" / "translation_map.backup.json"\n'
+        'BACKUP_TIMESTAMPED_DIR = Path(__file__).parent.parent / "data" / "translation_map_backups"'
+    )
+
+# Modify save() to create backup before writing
+old_save = '''def save(data: dict, path: Path = MAP_PATH) -> None:
     validate(data)
-    return data
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)'''
 
-
-def save(data: dict, path: Path = MAP_PATH) -> None:
+new_save = '''def save(data: dict, path: Path = MAP_PATH) -> None:
     validate(data)
     # v0.5.3: auto-backup before overwriting
     if path.exists():
@@ -43,40 +61,18 @@ def save(data: dict, path: Path = MAP_PATH) -> None:
         except Exception:
             pass  # never block save on backup failure
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, indent=2, ensure_ascii=False)'''
 
+if old_save in src:
+    src = src.replace(old_save, new_save)
+    print("[OK] save() now creates backups")
+else:
+    print("[WARN] Could not patch save() - anchor not found")
 
-def validate(data: dict) -> None:
-    missing = REQUIRED_TOP_KEYS - data.keys()
-    if missing:
-        raise ValueError(f"Translation map missing keys: {missing}")
-    if data["schema_version"] != SCHEMA_VERSION:
-        raise ValueError(f"Unsupported schema_version: {data['schema_version']}")
-    for i, entry in enumerate(data["entries"]):
-        missing = REQUIRED_ENTRY_KEYS - entry.keys()
-        if missing:
-            raise ValueError(f"Entry {i} missing keys: {missing}")
-        if entry["confidence"] not in VALID_CONFIDENCE:
-            raise ValueError(f"Entry {i} invalid confidence: {entry['confidence']}")
-        if entry["vdt"] is None and entry["odot"] is None:
-            raise ValueError(f"Entry {i} has both vdt and odot null")
-
-
-def find_by_vdt(code: str, data: Optional[dict] = None) -> Optional[dict]:
-    data = data if data is not None else load()
-    for e in data["entries"]:
-        if e["vdt"] and e["vdt"]["code"] == code:
-            return e
-    return None
-
-
-def find_by_odot(code: str, data: Optional[dict] = None) -> Optional[dict]:
-    data = data if data is not None else load()
-    for e in data["entries"]:
-        if e["odot"] and e["odot"]["code"] == code:
-            return e
-    return None
-
+# Add safe_load() at the end of the file (returns (data, error_msg))
+# v0.5.3 safe_load
+if "def safe_load(" not in src:
+    safe_load_code = '''
 
 # v0.5.3 safe_load: corruption-aware loader.
 def safe_load(path: Path = MAP_PATH):
@@ -121,3 +117,17 @@ def restore_from_backup(path: Path = MAP_PATH, backup: Path = BACKUP_PATH) -> bo
 def has_backup(backup: Path = BACKUP_PATH) -> bool:
     """v0.5.3: return True if a backup file exists and is readable."""
     return backup.exists() and backup.is_file()
+'''
+    src = src.rstrip() + "\n" + safe_load_code
+    print("[OK] Added safe_load, restore_from_backup, has_backup")
+
+# Verify and save
+try:
+    ast.parse(src)
+except SyntaxError as e:
+    print(f"[ERROR] Syntax error after patch: {e}")
+    print(f"        File NOT saved. Backup is at _backup_v0_5_3\\{TM.name}")
+    sys.exit(1)
+
+TM.write_text(src, encoding="utf-8")
+print(f"[DONE] {TM} patched.")

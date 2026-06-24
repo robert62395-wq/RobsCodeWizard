@@ -1,4 +1,3 @@
-# v0.5.3 diag logs downgraded - markers moved from INFO to DEBUG
 """Main window (Phase 3: ODOT parser dispatch).
 
 v0.4.2 integration:
@@ -183,7 +182,7 @@ class MainWindow(QMainWindow):
                 return
             import time as _t
             self._reval_t0 = _t.perf_counter()
-            log.debug("[diag] _revalidate_and_repopulate: spawning worker (%d rows)", len(self.rows))
+            log.info("[diag] _revalidate_and_repopulate: spawning worker (%d rows)", len(self.rows))
             from app.ui.busy_dialog import BusyDialog
             from app.services.revalidation_worker import RevalidationWorker
             self._reval_dlg = BusyDialog(self, "Switching code set...")
@@ -193,7 +192,7 @@ class MainWindow(QMainWindow):
             self._reval_worker.finished_with_data.connect(self._on_revalidation_done)
             self._reval_worker.error_message.connect(self._on_revalidation_error)
             self._reval_worker.start()
-            log.debug("[diag] worker.start() called, returning to event loop")
+            log.info("[diag] worker.start() called, returning to event loop")
         except Exception as exc:
             log.exception("Revalidation failed: %s", exc)
             self._error_dialog("Revalidation failed", exc)
@@ -202,25 +201,25 @@ class MainWindow(QMainWindow):
         """v0.3.9.5.2.0.1 diagnostic: timing logs around table repopulation."""
         import time as _t
         t0 = _t.perf_counter()
-        log.debug("[diag] _on_revalidation_done: entry (received %d results)", len(results))
+        log.info("[diag] _on_revalidation_done: entry (received %d results)", len(results))
         self.results = results
         self.suggestions = suggestions
         t1 = _t.perf_counter()
         self._populate_table()
         t2 = _t.perf_counter()
-        log.debug("[diag] _populate_table: %.3fs (Raw Data, %d rows)", t2 - t1, len(self.rows))
+        log.info("[diag] _populate_table: %.3fs (Raw Data, %d rows)", t2 - t1, len(self.rows))
         if hasattr(self, "modified_tab"):
             t3 = _t.perf_counter()
             self.modified_tab.refresh_from_parent()
             t4 = _t.perf_counter()
-            log.debug("[diag] modified_tab.refresh_from_parent: %.3fs", t4 - t3)
+            log.info("[diag] modified_tab.refresh_from_parent: %.3fs", t4 - t3)
         if hasattr(self, "_reval_dlg") and self._reval_dlg:
             self._reval_dlg.close()
             self._reval_dlg = None
         t5 = _t.perf_counter()
-        log.debug("[diag] _on_revalidation_done total: %.3fs", t5 - t0)
+        log.info("[diag] _on_revalidation_done total: %.3fs", t5 - t0)
         if hasattr(self, "_reval_t0"):
-            log.debug("[diag] end-to-end code-set switch: %.3fs", t5 - self._reval_t0)
+            log.info("[diag] end-to-end code-set switch: %.3fs", t5 - self._reval_t0)
             self._update_status_bar()  # v0.5.2.3
             
     def _on_revalidation_error(self, msg):

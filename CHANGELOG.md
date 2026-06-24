@@ -1,3 +1,39 @@
+## v0.5.3 - 2026-06-23 - Error handling & resilience (Phase 1)
+
+### Added
+- `app/services/safe_event_handler.py` — `@safe_handler` decorator for Qt
+  event handlers. Routes exceptions to status bar (minor) or modal dialog
+  (severe), preventing app crashes from uncaught slot exceptions.
+- `app/services/recovery_dialog.py` — `CorruptionRecoveryDialog` shown when
+  `translation_map.json` fails to load. Offers "Restore from backup" /
+  "Reseed from catalog" / "Cancel" actions.
+- `app/services/translation_map.py`:
+  - `safe_load(path)` returns `(data, error_msg)` instead of raising,
+    enabling graceful corruption recovery.
+  - `restore_from_backup()` and `has_backup()` helpers.
+  - Automatic backup-on-save: each successful `save()` first copies the
+    existing map to `translation_map.backup.json` (replace) and to
+    `data/translation_map_backups/translation_map_<timestamp>.json`
+    (rolling history, last 10 kept).
+- `tests/test_safe_event_handler.py` (5 tests)
+- `tests/test_translation_map_safe_load.py` (7 tests)
+
+### Changed
+- `app/ui/main_window.py` — `[diag]` logging markers in
+  `_revalidate_and_repopulate` downgraded from INFO to DEBUG. Logs are now
+  less noisy during normal use; verbose tracing still available when DEBUG
+  level is enabled.
+
+### Deferred to v0.5.3.1
+- CSV parse error row-level recovery (file_parser.py)
+- Auto-save recovery file timer (recovery.py)
+- Exporter file-level error reporting (odot_exporter.py)
+
+### Notes
+- All v0.5.3 patchers are idempotent (sentinel string check) and safe to
+  re-run. Backups in `_backup_v0_5_3/`.
+- Translation map backups in `app/data/translation_map_backups/` are
+  pruned automatically; only the 10 most recent are kept.
 ## v0.5.2.1 - 2026-06-22 - Status bar foundation
 
 ### Added
