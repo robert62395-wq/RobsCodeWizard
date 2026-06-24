@@ -1,0 +1,2 @@
+Things to add
+Temporary splash screen on translation tab warning the user that this area is still under construction

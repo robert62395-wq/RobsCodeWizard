@@ -6,7 +6,6 @@ v0.4.2 integration:
 """
 import logging, os
 from pathlib import Path
-from app.ui.help_icon import HelpIcon
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QTabWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTableWidget, QTableWidgetItem, QFileDialog, QMessageBox, QMenu, QHeaderView,
@@ -79,9 +78,8 @@ class MainWindow(QMainWindow):
         self.modified_tab = ModifiedDataTab(self)
         self.tabs.addTab(self.modified_tab, "Modified Data")
         # v0.5.2 status bar init
-        self._status = self.statusBar()
-        self._status.show()
-        self._status.showMessage("Ready")
+        sb = self.statusBar()
+        sb.showMessage("Ready")
 
     def _build_menu(self):
         bar = self.menuBar()
@@ -131,28 +129,13 @@ class MainWindow(QMainWindow):
         self.codeset_selector = CodeSetSelector()
         self.codeset_selector.set_active(self.codeset.name)
         self.codeset_selector.codesetChanged.connect(self._on_codeset_changed)
-
         bar.addWidget(self.codeset_selector)
-        bar.addWidget(HelpIcon("code_set"))
-
         bar.addSpacing(20)
-
-        open_btn = QPushButton("Open CSV/TXT...")
-        open_btn.clicked.connect(self.on_open_file)
-        self._update_status_bar()
-
-        linework_btn = QPushButton("Linework Fix")
-        linework_btn.clicked.connect(self.on_linework_fix)
-
+        open_btn = QPushButton("Open CSV/TXT..."); open_btn.clicked.connect(self.on_open_file)
+        linework_btn = QPushButton("Linework Fix"); linework_btn.clicked.connect(self.on_linework_fix)
         self.export_btn = QPushButton("Export Validation Report...")
-        self.export_btn.clicked.connect(self.on_export_report)
-        self.export_btn.setEnabled(False)
-
-        bar.addWidget(open_btn)
-        bar.addWidget(linework_btn)
-        bar.addWidget(HelpIcon("linework_fix"))
-        bar.addWidget(self.export_btn)
-        bar.addStretch(1)
+        self.export_btn.clicked.connect(self.on_export_report); self.export_btn.setEnabled(False)
+        bar.addWidget(open_btn); bar.addWidget(linework_btn); bar.addWidget(self.export_btn); bar.addStretch(1)
         layout.addLayout(bar)
         self.table = QTableWidget(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
@@ -220,8 +203,8 @@ class MainWindow(QMainWindow):
         log.info("[diag] _on_revalidation_done total: %.3fs", t5 - t0)
         if hasattr(self, "_reval_t0"):
             log.info("[diag] end-to-end code-set switch: %.3fs", t5 - self._reval_t0)
-            self._update_status_bar()  # v0.5.2.3
-            
+            self._update_status_bar()  # v0.5.2
+
     def _on_revalidation_error(self, msg):
         """v0.3.9.5.1.6: revalidation worker raised."""
         if hasattr(self, "_reval_dlg") and self._reval_dlg:
@@ -260,7 +243,6 @@ class MainWindow(QMainWindow):
             self._offset_undo_stack = []  # reset on file open
             if self.settings.get("auto_save_recovery", True):
                 recovery.save_session(self.rows, source_path=path, suggestions=self.suggestions)
-                self._update_status_bar()  # v0.5.2.3
         except Exception as exc:
             log.exception("Failed to open file: %s", exc)
             self._error_dialog("Open failed", exc)
@@ -325,7 +307,6 @@ class MainWindow(QMainWindow):
         if hasattr(self, "modified_tab"):
             self.modified_tab.refresh_from_parent()
         self.export_btn.setEnabled(bool(self.rows))
-        self._update_status_bar()  # v0.5.2.3
         # v0.4.2: enable Tools actions on restore as well
         if hasattr(self, "_point_offset_action"):
             self._point_offset_action.setEnabled(bool(self.rows))

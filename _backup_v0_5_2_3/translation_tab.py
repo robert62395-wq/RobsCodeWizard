@@ -10,13 +10,12 @@ from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QComboBox, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog,
-    QHeaderView, QCheckBox, QDialog, QGridLayout, QTextEdit, QFrame,
+    QHeaderView, QCheckBox, QDialog, QGridLayout, QTextEdit,
 )
 
 from app.services import translation_map as tm
 from app.services.usage_analyzer import analyze_used_codes
 from app.services.match_basis_descriptor import short_label
-from app.services.settings import load_settings, set_setting
 from app.ui.help_icon import HelpIcon
 
 log = logging.getLogger("robs_code_wizard")
@@ -102,54 +101,8 @@ class TranslationTab(QWidget):
         self._build_ui()
         self._safe_refresh()
 
-    def _build_under_construction_banner(self):
-        """v0.5.2.3 — warns users this tab is being rebuilt."""
-        settings = load_settings()
-        if settings.get("translation_under_construction_hidden", False):
-            return None
-
-        frame = QFrame()
-        frame.setStyleSheet(
-            "QFrame { background-color: #FFF3CD; border: 2px solid #FFB300;"
-            " border-radius: 4px; padding: 8px; }"
-        )
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(10, 6, 10, 6)
-
-        icon_lbl = QLabel("[!]")
-        icon_lbl.setStyleSheet("font-size: 18px; font-weight: bold; background: transparent; border: none; color: #d35400;")
-        layout.addWidget(icon_lbl)
-
-        msg_lbl = QLabel(
-            "<b>Under construction.</b> The Translation tab is being rebuilt. "
-            "The automatic matching algorithm produces low-quality suggestions today. "
-            "Manual review of every entry is recommended before saving overrides."
-        )
-        msg_lbl.setWordWrap(True)
-        msg_lbl.setStyleSheet("background: transparent; border: none;")
-        layout.addWidget(msg_lbl, 1)
-
-        dismiss_btn = QPushButton("Dismiss for this session")
-        dismiss_btn.setStyleSheet("padding: 4px 10px;")
-        dismiss_btn.clicked.connect(lambda: frame.setVisible(False))
-        layout.addWidget(dismiss_btn)
-
-        hide_forever_btn = QPushButton("Don't show again")
-        hide_forever_btn.setStyleSheet("padding: 4px 10px;")
-        def _hide_forever():
-            set_setting("translation_under_construction_hidden", True)
-            frame.setVisible(False)
-        hide_forever_btn.clicked.connect(_hide_forever)
-        layout.addWidget(hide_forever_btn)
-
-        return frame
-
     def _build_ui(self):
         root = QVBoxLayout(self)
-        # v0.5.2.3 under construction banner
-        _uc = self._build_under_construction_banner()
-        if _uc is not None:
-            root.addWidget(_uc)
         self.status_lbl = QLabel("Loading...")
         self.status_lbl.setWordWrap(True)
         root.addWidget(self.status_lbl)

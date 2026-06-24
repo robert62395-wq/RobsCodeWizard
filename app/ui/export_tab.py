@@ -54,6 +54,8 @@ class ExportTab(QWidget):
         self.or_use_numeric = QCheckBox("Use numeric line-connect codes (recommended for OpenRoads)")
         self.or_use_numeric.setChecked(True)
         or_layout.addWidget(self.or_use_numeric)
+        from app.ui.help_icon import HelpIcon
+        or_layout.addWidget(HelpIcon("export_use_numeric"))
         self.or_export_btn = QPushButton("Export to OpenRoads...")
         self.or_export_btn.clicked.connect(self._on_export_openroads)
         or_layout.addWidget(self.or_export_btn)
