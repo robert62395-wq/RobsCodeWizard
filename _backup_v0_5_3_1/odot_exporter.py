@@ -68,18 +68,14 @@ def export_vdt_to_civil3d(rows, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     conversions = 0
     written = 0
-    errors = []
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        for i, row in enumerate(rows, start=1):
-            try:
-                new_desc, c = _convert_description(row.get("D", ""), "vdt", to_vdt)
-                conversions += c
-                writer.writerow(_row_to_pnezd(row, new_desc))
-                written += 1
-            except Exception as exc:
-                errors.append({"row_index": i, "point": row.get("P", "?"), "error": str(exc)})
-    return written, conversions, errors  # v0.5.3.1 export error tracking
+        for row in rows:
+            new_desc, c = _convert_description(row.get("D", ""), "vdt", to_vdt)
+            conversions += c
+            writer.writerow(_row_to_pnezd(row, new_desc))
+            written += 1
+    return written, conversions
 
 
 def export_odot_to_civil3d(rows, out_path):
@@ -88,18 +84,14 @@ def export_odot_to_civil3d(rows, out_path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     conversions = 0
     written = 0
-    errors = []
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        for i, row in enumerate(rows, start=1):
-            try:
-                new_desc, c = _convert_description(row.get("D", ""), "odot", to_odot_alpha)
-                conversions += c
-                writer.writerow(_row_to_pnezd(row, new_desc))
-                written += 1
-            except Exception as exc:
-                errors.append({"row_index": i, "point": row.get("P", "?"), "error": str(exc)})
-    return written, conversions, errors
+        for row in rows:
+            new_desc, c = _convert_description(row.get("D", ""), "odot", to_odot_alpha)
+            conversions += c
+            writer.writerow(_row_to_pnezd(row, new_desc))
+            written += 1
+    return written, conversions
 
 
 def export_odot_to_openroads(rows, out_path, use_numeric=True):
@@ -109,26 +101,20 @@ def export_odot_to_openroads(rows, out_path, use_numeric=True):
     conversions = 0
     written = 0
     target_fn = to_odot_numeric if use_numeric else to_odot_alpha
-    errors = []
     with open(out_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        for i, row in enumerate(rows, start=1):
-            try:
-                new_desc, c = _convert_description(row.get("D", ""), "odot", target_fn)
-                conversions += c
-                writer.writerow(_row_to_pnezd(row, new_desc))
-                written += 1
-            except Exception as exc:
-                errors.append({"row_index": i, "point": row.get("P", "?"), "error": str(exc)})
-    return written, conversions, errors
+        for row in rows:
+            new_desc, c = _convert_description(row.get("D", ""), "odot", target_fn)
+            conversions += c
+            writer.writerow(_row_to_pnezd(row, new_desc))
+            written += 1
+    return written, conversions
 
 
 # Backward-compat aliases for v0.4.5 callers (assume ODOT source)
 def export_civil3d(rows, out_path):
-    written, conversions, _errors = export_odot_to_civil3d(rows, out_path)
-    return written, conversions
+    return export_odot_to_civil3d(rows, out_path)
 
 
 def export_openroads(rows, out_path, use_numeric=True):
-    written, conversions, _errors = export_odot_to_openroads(rows, out_path, use_numeric=use_numeric)
-    return written, conversions
+    return export_odot_to_openroads(rows, out_path, use_numeric=use_numeric)

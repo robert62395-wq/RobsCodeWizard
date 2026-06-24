@@ -1,4 +1,26 @@
-"""Parse PNEZD survey files (v0.5.3.1 with row-level error recovery)."""
+"""v0.5.3.1 patcher: row-level error recovery for parser.py (PNEZD)."""
+import ast
+import sys
+from pathlib import Path
+
+P = Path("app/services/parser.py")
+if not P.exists():
+    print(f"[ERROR] {P} not found.")
+    sys.exit(1)
+
+src = P.read_text(encoding="utf-8")
+SENTINEL = "v0.5.3.1 row error recovery"
+if SENTINEL in src:
+    print(f"[OK] {P} already patched.")
+    sys.exit(0)
+
+backup = Path("_backup_v0_5_3_1") / P.name
+backup.parent.mkdir(parents=True, exist_ok=True)
+backup.write_text(src, encoding="utf-8")
+print(f"[OK] Backed up {P}")
+
+# Replace the entire file content - the original is tiny.
+NEW_SRC = '''"""Parse PNEZD survey files (v0.5.3.1 with row-level error recovery)."""
 # v0.5.3.1 row error recovery
 import csv
 from pathlib import Path
@@ -56,3 +78,13 @@ def parse_pnezd_with_errors(path):
                     reason=f"Unexpected error: {exc}",
                 ))
     return result
+'''
+
+try:
+    ast.parse(NEW_SRC)
+except SyntaxError as e:
+    print(f"[ERROR] New file would have syntax error: {e}")
+    sys.exit(1)
+
+P.write_text(NEW_SRC, encoding="utf-8")
+print(f"[DONE] {P} patched (parse_pnezd_with_errors added; parse_pnezd kept as legacy alias).")

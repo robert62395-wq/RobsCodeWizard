@@ -1,3 +1,39 @@
+## v0.5.3.1 - 2026-06-23 - Error handling Phase 2
+
+### Added
+- `app/services/parse_errors.py` — `ParseError` and `ParseResult` dataclasses
+  for collecting row-level errors during file parsing.
+- `app/ui/parse_error_dialog.py` — `ParseErrorDialog` summary shown after
+  parse if errors were collected. Lists skipped rows with line number,
+  reason, and raw content. "Save error log..." button writes a text report.
+- `app/services/recovery_timer.py` — `RecoveryTimer` Qt timer that
+  auto-saves the current session every 5 minutes during edit sessions.
+  Disables itself after 3 consecutive save failures.
+- `tests/test_parse_errors.py` (6 tests)
+- `tests/test_recovery_timer.py` (5 tests)
+- `tests/test_parser_v0531.py` (5 tests)
+- `tests/test_odot_exporter_v0531.py` (4 tests)
+
+### Changed
+- `app/services/parser.py` — added `parse_pnezd_with_errors()` returning
+  `ParseResult`. Legacy `parse_pnezd()` kept as alias. Soft warnings for
+  non-numeric N/E/Z values; hard errors for empty Point numbers.
+- `app/services/recovery.py` — atomic write via temp file + `os.replace()`
+  so a crash mid-save leaves the previous recovery intact.
+- `app/services/odot_exporter.py` — all three export functions now return
+  a 3-tuple `(written, conversions, errors)`. Errors list contains
+  per-row failures with row index, point number, and exception message.
+  Legacy `export_civil3d`/`export_openroads` aliases keep the 2-tuple
+  return shape for backward compatibility.
+
+### Notes
+- Patchers idempotent via sentinel strings ("v0.5.3.1 row error recovery",
+  "v0.5.3.1 atomic recovery write", "v0.5.3.1 export error tracking").
+  Safe to re-run. Backups in `_backup_v0_5_3_1/`.
+- Q1 picks (in order):
+  - **Q1 = B**: parse errors shown via summary dialog after parse completes.
+  - **Q2 = A**: recovery timer fires every 5 minutes.
+  - **Q3 = A**: exporter skips bad rows, summarizes errors at the end.
 ## v0.5.3 - 2026-06-23 - Error handling & resilience (Phase 1)
 
 ### Added

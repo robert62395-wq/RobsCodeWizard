@@ -1,4 +1,25 @@
-"""Session recovery (v0.5.3.1 with atomic write + last-modified)."""
+"""v0.5.3.1 patcher: add modified_at + atomic-write to recovery.py."""
+import ast
+import sys
+from pathlib import Path
+
+R = Path("app/services/recovery.py")
+if not R.exists():
+    print(f"[ERROR] {R} not found.")
+    sys.exit(1)
+
+src = R.read_text(encoding="utf-8")
+SENTINEL = "v0.5.3.1 atomic recovery write"
+if SENTINEL in src:
+    print(f"[OK] {R} already patched.")
+    sys.exit(0)
+
+backup = Path("_backup_v0_5_3_1") / R.name
+backup.parent.mkdir(parents=True, exist_ok=True)
+backup.write_text(src, encoding="utf-8")
+print(f"[OK] Backed up {R}")
+
+NEW_SRC = '''"""Session recovery (v0.5.3.1 with atomic write + last-modified)."""
 # v0.5.3.1 atomic recovery write
 from __future__ import annotations
 import json
@@ -62,3 +83,13 @@ def clear_session():
 
 def has_session():
     return get_recovery_path().exists()
+'''
+
+try:
+    ast.parse(NEW_SRC)
+except SyntaxError as e:
+    print(f"[ERROR] Patched file has syntax error: {e}")
+    sys.exit(1)
+
+R.write_text(NEW_SRC, encoding="utf-8")
+print(f"[DONE] {R} patched (atomic write via temp file + os.replace).")
