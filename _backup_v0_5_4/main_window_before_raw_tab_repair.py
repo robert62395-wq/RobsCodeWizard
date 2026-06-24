@@ -1,3 +1,4 @@
+# v0.5.4 raw data caller rewrite
 # v0.5.3 diag logs downgraded - markers moved from INFO to DEBUG
 """Main window (Phase 3: ODOT parser dispatch).
 
@@ -145,11 +146,6 @@ class MainWindow(QMainWindow):
         help_menu.addAction(dnt_action)
 
     def _build_raw_data_tab(self):
-        """Build the Raw Data tab.
-
-        v0.5.4 model/view rewrite:
-        QTableWidget is replaced by QTableView + RawDataTableModel.
-        """
         page = QWidget()
         layout = QVBoxLayout(page)
 
@@ -165,7 +161,7 @@ class MainWindow(QMainWindow):
 
         bar.addSpacing(20)
 
-        open_btn = QPushButton("Open CSV/TXT...")
+        = QPushButton("Open CSV/TXT...")
         open_btn.setToolTip("Load a PNEZD CSV or TXT point file for analysis.")
         open_btn.clicked.connect(self.on_open_file)
 
@@ -335,21 +331,12 @@ class MainWindow(QMainWindow):
             self._error_dialog("Linework Fix failed", exc)
 
     def _jump_to_row(self, row_index):
-        """v0.5.4 raw data caller rewrite: scroll/select by model index."""
-        try:
-            row_index = int(row_index)
-        except Exception:
-            return
-
-        if not hasattr(self, "raw_data_model"):
-            return
-
-        if row_index < 0 or row_index >= self.raw_data_model.rowCount():
-            return
-
-        index = self.raw_data_model.index(row_index, 0)
-        self.table.scrollTo(index)
-        self.table.selectRow(row_index)
+        """Select and scroll to the given row index in the Raw Data table."""
+        if 0 <= row_index < self.table.rowCount():
+            self.table.selectRow(row_index)
+            cell = self.table.item(row_index, 0)
+            if cell:
+                self.table.scrollToItem(cell)
 
     def on_export_report(self):
         try:
@@ -738,114 +725,55 @@ class MainWindow(QMainWindow):
             pass
 
     def _populate_table(self):
-        """v0.5.4 raw data caller rewrite: fast model/view populate.
-
-        Old path created thousands of QTableWidgetItems and colored cells one by one.
-        New path resets RawDataTableModel once and lets Qt request visible cells on demand.
-        """
-        import time
-        t0 = time.perf_counter()
-
-        if not hasattr(self, "raw_data_model"):
-            log.warning("populate skipped: raw_data_model is missing")
-            return
-
-        self.raw_data_model.set_data(
-            getattr(self, "rows", []),
-            getattr(self, "results", []),
-            getattr(self, "suggestions", []),
-        )
-
+        """v0.3.9.4.1: bulk-update guard (suppress repaints + sort) for big files."""
+        from PySide6.QtWidgets import QApplication
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        self.table.setUpdatesEnabled(False)
+        self.table.setSortingEnabled(False)
         try:
-            if self.raw_data_model.rowCount() > 0:
-                self.table.selectRow(0)
-        except Exception:
-            pass
+            self.table.setRowCount(len(self.rows))
+            for i, row in enumerate(self.rows):
+                result = self.results[i]
+                suggestion = self.suggestions[i] or ""
+                cells = [str(row.get("P", "")), str(row.get("D", "")), str(row.get("D", "")),
+                         "Yes" if result["valid"] else "No",
+                         "; ".join(result["issues"]), "", suggestion]
+                for c, value in enumerate(cells):
+                    item = QTableWidgetItem(value); item.setTextAlignment(Qt.AlignCenter)
+                    self.table.setItem(i, c, item)
+                self._apply_row_color(i, row, result)
+        finally:
+            self.table.setSortingEnabled(True)
+            self.table.setUpdatesEnabled(True)
+            self.table.viewport().update()
+            QApplication.restoreOverrideCursor()
+        self.table.resizeColumnsToContents()
 
-        elapsed = time.perf_counter() - t0
-        log.info(
-            "populate: %.3fs (%d rows)",
-            elapsed,
-            len(getattr(self, "rows", []) or []),
-        )
-
-        try:
-            self._update_status_bar()
-        except Exception:
-            pass
-
-        try:
-            if getattr(self, "_recovery_timer", None) is not None:
-                self._recovery_timer.mark_dirty()
-        except Exception:
-            pass
-
-    def _apply_row_color(self, i, row=None, result=None):
-        """v0.5.4 raw data caller rewrite.
-
-        No-op retained for backward compatibility. Row coloring now happens in
-        RawDataTableModel.data(..., Qt.BackgroundRole).
-        """
-        return
+    def _apply_row_color(self, i, row, result):
+        zero_elev = float(row.get("Z", 0) or 0) == 0.0
+        bad_code = not result["valid"]
+        color = None
+        if bad_code: color = QColor("#ff6b6b")
+        elif zero_elev: color = QColor("#fff3a0")
+        if color:
+            for c in range(self.table.columnCount()):
+                cell = self.table.item(i, c)
+                if cell: cell.setBackground(color)
 
     def _on_context_menu(self, pos):
-        """v0.5.4 raw data caller rewrite: context menu for QTableView."""
-        if not hasattr(self, "raw_data_model"):
-            return
-
         index = self.table.indexAt(pos)
-        if not index.isValid():
-            return
-
+        if not index.isValid(): return
         row = index.row()
-        suggestion = self.raw_data_model.suggestion(row)
-
+        suggestion = self.suggestions[row] if row < len(self.suggestions) else None
+        if not suggestion: return
         menu = QMenu(self)
-
-        if suggestion:
-            action = QAction("Apply Suggestion", self)
-            action.triggered.connect(
-                lambda _checked=False, r=row, s=suggestion: self._apply_suggestion(r, s)
-            )
-            menu.addAction(action)
-
-        jump_action = QAction("Jump to Point", self)
-        jump_action.triggered.connect(lambda _checked=False, r=row: self._jump_to_row(r))
-        menu.addAction(jump_action)
-
+        action = QAction(f"Apply suggestion: {suggestion}", self)
+        action.triggered.connect(lambda: self._apply_suggestion(row, suggestion))
+        menu.addAction(action)
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
-    def _apply_suggestion(self, row, suggestion=None):
-        """v0.5.4 raw data caller rewrite: apply suggestion via RawDataTableModel."""
-        try:
-            row = int(row)
-        except Exception:
-            return
-
-        if not hasattr(self, "raw_data_model"):
-            return
-
-        if suggestion is None:
-            suggestion = self.raw_data_model.suggestion(row)
-
-        if not suggestion:
-            return
-
-        self.raw_data_model.apply_suggestion(row, suggestion)
-
-        try:
-            if hasattr(self, "modified_tab"):
-                self.modified_tab.refresh_from_parent()
-        except Exception:
-            pass
-
-        try:
-            if getattr(self, "_recovery_timer", None) is not None:
-                self._recovery_timer.mark_dirty()
-        except Exception:
-            pass
-
-        try:
-            self._update_status_bar()
-        except Exception:
-            pass
+    def _apply_suggestion(self, row, suggestion):
+        self.table.item(row, 2).setText(suggestion)
+        self.rows[row]["D"] = suggestion
+        self.results[row] = next(iter(validate_rows([self.rows[row]], self.codeset)))
+        self._apply_row_color(row, self.rows[row], self.results[row])
