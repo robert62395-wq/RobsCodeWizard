@@ -1,4 +1,3 @@
-# v0.5.3.2 three-tuple unpack
 import csv
 import pytest
 from pathlib import Path
@@ -23,7 +22,7 @@ def test_vdt_civil3d_letters_only(tmp_path):
 def test_vdt_civil3d_strips_asterisk(tmp_path):
     out = tmp_path / "v.csv"
     rows = [{"P": 1, "N": 1.0, "E": 2.0, "Z": 3.0, "D": "EP BL*"}]
-    written, conversions, _errors = export_vdt_to_civil3d(rows, out)
+    written, conversions = export_vdt_to_civil3d(rows, out)
     assert _read_csv(out)[0][4] == "EP B"
     assert conversions == 1
 
@@ -46,7 +45,7 @@ def test_vdt_civil3d_no_header(tmp_path):
 def test_odot_civil3d_numeric_to_alpha(tmp_path):
     out = tmp_path / "o.csv"
     rows = [{"P": 1, "N": 1.0, "E": 2.0, "Z": 3.0, "D": "EP 1"}]
-    written, conversions, _errors = export_odot_to_civil3d(rows, out)
+    written, conversions = export_odot_to_civil3d(rows, out)
     assert _read_csv(out)[0][4] == "EP BL*"
     assert conversions == 1
 
@@ -62,7 +61,7 @@ def test_odot_civil3d_alpha_preserved(tmp_path):
 def test_odot_openroads_alpha_to_numeric(tmp_path):
     out = tmp_path / "or.csv"
     rows = [{"P": 1, "N": 1.0, "E": 2.0, "Z": 3.0, "D": "EP BL*"}]
-    written, conversions, _errors = export_odot_to_openroads(rows, out, use_numeric=True)
+    written, conversions = export_odot_to_openroads(rows, out, use_numeric=True)
     assert _read_csv(out)[0][4] == "EP 1"
     assert conversions == 1
 

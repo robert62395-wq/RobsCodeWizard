@@ -1,3 +1,18 @@
+## v0.5.3.2 - 2026-06-23 - Hotfix: legacy test_odot_exporter.py 3-tuple unpack
+
+### Fixed
+- `tests/test_odot_exporter.py` — three legacy tests (`test_vdt_civil3d_strips_asterisk`,
+  `test_odot_civil3d_numeric_to_alpha`, `test_odot_openroads_alpha_to_numeric`) were
+  still unpacking 2-tuple returns after v0.5.3.1 changed the export functions to
+  return `(written, conversions, errors)`. CI build failed with
+  `ValueError: too many values to unpack (expected 2)`.
+- Tests now unpack as `(written, conversions, _errors)` so the legacy assertions
+  still pass while the new error-list contract is honored.
+
+### Notes
+- Patcher idempotent via sentinel `"v0.5.3.2 three-tuple unpack"`.
+- Backups in `_backup_v0_5_3_2/`.
+- No runtime behavior changes; only test expectations updated.
 ## v0.5.3.1 - 2026-06-23 - Error handling Phase 2
 
 ### Added
