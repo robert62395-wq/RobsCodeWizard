@@ -344,8 +344,34 @@ class TranslationTab(QWidget):
             )
 
     def _populate(self):
-        """v0.5.5 model-based populate for Translation tab."""
+        """v0.5.5 model-based populate"""
+
         entries = self._map_data.get("entries", [])
+
+        # Keep same ordering as before
+        sorted_entries = sorted(entries, key=lambda e: (
+        (e.get("vdt") or {}).get("code", "") or
+        (e.get("odot") or {}).get("code", "")
+        ))
+
+        # Create model
+        self.translation_model = TranslationTableModel(
+        sorted_entries,
+        self._used_counts
+        )
+
+        # ✅ THIS is the line you were missing
+        self.table.setModel(self.translation_model)
+
+        # Resize columns
+        try:
+            self.table.resizeColumnsToContents()
+            self.table.horizontalHeader().setStretchLastSection(True)
+        except Exception:
+            pass
+
+        self._apply_filter()
+
 
         sorted_entries = sorted(entries, key=lambda e: (
             (e.get("vdt") or {}).get("code", "") or (e.get("odot") or {}).get("code", "")
