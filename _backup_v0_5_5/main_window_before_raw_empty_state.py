@@ -1,5 +1,3 @@
-# v0.5.5 translation autoload
-# v0.5.5 raw empty state
 # v0.5.3 diag logs downgraded - markers moved from INFO to DEBUG
 """Main window (Phase 3: ODOT parser dispatch).
 
@@ -187,25 +185,6 @@ class MainWindow(QMainWindow):
         bar.addStretch(1)
 
         layout.addLayout(bar)
-        # v0.5.5 raw empty state
-        self.raw_empty_state = QLabel(
-            "<h2>No point file loaded yet</h2>"
-            "<p>Open a CSV/TXT point file to begin reviewing survey codes, "
-            "linework, elevations, and export readiness.</p>"
-            "<p><b>Tip:</b> Use the <i>Open CSV/TXT...</i> button above to start.</p>"
-        )
-        self.raw_empty_state.setWordWrap(True)
-        self.raw_empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.raw_empty_state.setStyleSheet(
-            "QLabel {"
-            " background-color: #F6F8FA;"
-            " border: 1px solid #D0D7DE;"
-            " border-radius: 6px;"
-            " padding: 24px;"
-            " color: #24292F;"
-            "}"
-        )
-        layout.addWidget(self.raw_empty_state)
 
         # v0.5.4 model/view: QTableView + RawDataTableModel
         self.raw_data_model = RawDataTableModel(self)
@@ -315,16 +294,6 @@ class MainWindow(QMainWindow):
             self.results = validate_rows(self.rows, self.codeset)
             self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
             self._populate_table()
-            # v0.5.5 translation autoload
-            try:
-                if hasattr(self, 'translation_tab'):
-                    # TranslationTab reads parent.rows directly, so just refresh it.
-                    if hasattr(self.translation_tab, 'show_used_only'):
-                        self.translation_tab.show_used_only.setChecked(True)
-                    if hasattr(self.translation_tab, '_safe_refresh'):
-                        self.translation_tab._safe_refresh()
-            except Exception as exc:
-                log.exception('Translation auto-load failed: %s', exc)
             if hasattr(self, "modified_tab"):
                 self.modified_tab.refresh_from_parent()
             self.export_btn.setEnabled(bool(self.rows))
@@ -769,7 +738,11 @@ class MainWindow(QMainWindow):
             pass
 
     def _populate_table(self):
-        """v0.5.5: fast model/view populate + empty-state refresh."""
+        """v0.5.4 raw data caller rewrite: fast model/view populate.
+
+        Old path created thousands of QTableWidgetItems and colored cells one by one.
+        New path resets RawDataTableModel once and lets Qt request visible cells on demand.
+        """
         import time
         t0 = time.perf_counter()
 
@@ -777,18 +750,11 @@ class MainWindow(QMainWindow):
             log.warning("populate skipped: raw_data_model is missing")
             return
 
-        rows = getattr(self, "rows", []) or []
-        results = getattr(self, "results", []) or []
-        suggestions = getattr(self, "suggestions", []) or []
-
-        self.raw_data_model.set_data(rows, results, suggestions)
-
-        # v0.5.5 raw empty state
-        try:
-            if hasattr(self, "raw_empty_state"):
-                self.raw_empty_state.setVisible(len(rows) == 0)
-        except Exception:
-            pass
+        self.raw_data_model.set_data(
+            getattr(self, "rows", []),
+            getattr(self, "results", []),
+            getattr(self, "suggestions", []),
+        )
 
         try:
             if self.raw_data_model.rowCount() > 0:
@@ -797,7 +763,11 @@ class MainWindow(QMainWindow):
             pass
 
         elapsed = time.perf_counter() - t0
-        log.info("populate: %.3fs (%d rows)", elapsed, len(rows))
+        log.info(
+            "populate: %.3fs (%d rows)",
+            elapsed,
+            len(getattr(self, "rows", []) or []),
+        )
 
         try:
             self._update_status_bar()

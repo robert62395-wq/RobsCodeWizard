@@ -1,3 +1,58 @@
+## v0.5.5 - 2026-06-25 - First-launch and Translation tab UX polish
+
+### Added
+- Raw Data first-launch empty-state guidance panel.
+- Translation tab autoload/refresh behavior after opening a point file.
+- Translation tab visual cleanup so the banner and confidence colors match the dark Raw Data theme.
+- Translation tab model/view migration using `QTableView` + `TranslationTableModel`.
+
+### Changed
+- Translation tab no longer uses fragile QTableWidget row-building for its main table.
+- Translation confidence colors now match Raw Data visual intensity:
+  - Unmatched: red
+  - Best-guess: yellow
+  - Exact: green
+  - Manual: blue
+- Under-construction banner now uses dark-theme-safe styling.
+- Removed forced white table styling from Translation tab.
+- Removed broken `self.banner` styling reference.
+
+### Fixed
+- Translation tab unreadable text caused by pale row colors on dark theme.
+- Startup crash caused by missing `QTableView` import after the model/view conversion.
+- Runtime error caused by `QTableWidget.setModel()` being private.
+
+### Notes
+- Translation matching algorithm quality is still deferred for a later version.
+- v0.5.5 focused on usability, readability, and architectural cleanup.
+## v0.5.4 - 2026-06-24 - Performance rewrite (Raw Data tab)
+
+### 🚀 Major Performance Improvement
+- Replaced QTableWidget with QTableView + QAbstractTableModel (RawDataTableModel).
+- Eliminated per-cell item creation and per-row coloring loops.
+- `_populate_table` now completes in milliseconds instead of ~41 seconds on large files.
+- Measured: ~525 rows now load essentially instantly (~0.05s or less).
+
+### Technical Changes
+- New file: `app/ui/raw_data_model.py` (QAbstractTableModel implementation).
+- `_build_raw_data_tab` now uses QTableView bound to RawDataTableModel.
+- `_populate_table`, `_apply_row_color`, `_jump_to_row`, `_on_context_menu`,
+  `_apply_suggestion` fully rewritten to use model/view architecture.
+- Row coloring moved into `model.data()` via `Qt.BackgroundRole`.
+- Status update and recovery timer hooks preserved.
+
+### Changed Logging
+- Replaced noisy `[diag]` timing logs with a single summary:
+  - `populate: X.XXXs (N rows)`
+
+### Result
+- Code-set switch and initial load are now instantaneous.
+- UI no longer freezes during table population.
+- Scales cleanly to thousands of rows.
+
+### Notes
+- This is the largest UI architecture change in v0.5.x.
+- QTableWidget fully removed from Raw Data tab (now dead code elsewhere).
 ## v0.5.3.3 - 2026-06-23 - v0.5.3.1 wire-up + latent export crash hotfix
 
 ### Fixed

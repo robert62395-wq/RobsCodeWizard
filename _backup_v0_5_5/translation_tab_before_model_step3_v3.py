@@ -1,5 +1,3 @@
-# v0.5.5 force translation qtableview
-# v0.5.5 translation model step3 v3
 # v0.5.5 clean translation fix
 # v0.5.5 translation final fix
 # v0.5.5 translation final style
@@ -14,7 +12,7 @@ import logging
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QTableView,
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QComboBox, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog,
     QHeaderView, QCheckBox, QDialog, QGridLayout, QTextEdit, QFrame,
 )
@@ -24,7 +22,6 @@ from app.services.usage_analyzer import analyze_used_codes
 from app.services.match_basis_descriptor import short_label
 from app.services.settings import load_settings, set_setting
 from app.ui.help_icon import HelpIcon
-from app.ui.translation_model import TranslationTableModel
 
 log = logging.getLogger("robs_code_wizard")
 
@@ -231,14 +228,14 @@ class TranslationTab(QWidget):
         root.addLayout(filt)
 
         # Main table (7 columns, no section headers, no review pane)
-        # v0.5.5 force translation qtableview
-        self.table = QTableView()
-        self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+        self.table = QTableWidget(0, len(COLUMNS))
         # v0.5.5 translation style fix
+        self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.doubleClicked.connect(self._on_double_click)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.cellDoubleClicked.connect(self._on_double_click)
         root.addWidget(self.table)
 
         # Bottom action bar
@@ -344,52 +341,60 @@ class TranslationTab(QWidget):
             )
 
     def _populate(self):
-        """v0.5.5 model-based populate for Translation tab."""
         entries = self._map_data.get("entries", [])
-
-        sorted_entries = sorted(entries, key=lambda e: (
+        self.table.setRowCount(0)
+        for entry in sorted(entries, key=lambda e: (
             (e.get("vdt") or {}).get("code", "") or (e.get("odot") or {}).get("code", "")
-        ))
-
-        self.translation_model = TranslationTableModel(sorted_entries, self._used_counts)
-        self.table.setModel(self.translation_model)
-
-        try:
-            self.table.resizeColumnsToContents()
-            self.table.horizontalHeader().setStretchLastSection(True)
-        except Exception:
-            pass
-
+        )):
+            self._append_row(entry)
         self._apply_filter()
 
     def _append_row(self, entry):
-        """Deprecated in v0.5.5 model/view rewrite.
-
-        Kept for compatibility; _populate now uses TranslationTableModel.
-        """
-        return
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        vdt = entry.get("vdt") or {}
+        odot = entry.get("odot") or {}
+        conf = entry.get("confidence", "unmatched")
+        v_code = vdt.get("code", "")
+        o_code = odot.get("code", "")
+        count = max(
+            self._used_counts.get(v_code.upper(), 0),
+            self._used_counts.get(o_code.upper(), 0),
+        )
+        values = [
+            v_code, vdt.get("description", ""),
+            o_code, odot.get("description", ""),
+            short_label(entry), str(count) if count else "",
+            entry.get("notes", ""),
+        ]
+        color = CONFIDENCE_COLORS.get(conf)
+        for col, val in enumerate(values):
+            item = QTableWidgetItem(str(val))
+            # ✅ v0.5.5 proper row coloring (matches Raw Data)
+            if conf == "unmatched":
+                item.setBackground(QColor("#ff6b6b"))   # red
+            elif conf == "best-guess":
+                item.setBackground(QColor("#d6b100"))   # yellow
+            elif conf == "exact":
+                item.setBackground(QColor("#6ecb63"))   # green
+            elif conf == "manual":
+                item.setBackground(QColor("#7aa2f7"))   # blue
+            item.setData(Qt.UserRole, entry.get("id"))
+            self.table.setItem(row, col, item)
 
     def _apply_filter(self):
-        """v0.5.5 model/view filter.
-
-        Filtering is implemented by hiding rows in QTableView for now.
-        A QSortFilterProxyModel can replace this later.
-        """
-        if not hasattr(self, "translation_model"):
-            return
-
-        from PySide6.QtCore import QModelIndex
-
         search = self.search_box.text().strip().lower()
-        model = self.translation_model
-
-        for row in range(model.rowCount()):
-            entry = model.entries[row]
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            entry_id = item.data(Qt.UserRole)
+            entry = self._find_entry(entry_id)
+            if entry is None:
+                continue
             visible = True
-
             conf = entry.get("confidence", "unmatched")
             is_manual = entry.get("user_override", False)
-
             if is_manual and not self.show_manual.isChecked():
                 visible = False
             elif not is_manual:
@@ -399,13 +404,11 @@ class TranslationTab(QWidget):
                     visible = False
                 elif conf == "unmatched" and not self.show_unmatched.isChecked():
                     visible = False
-
             if visible and self.show_used_only.isChecked():
                 v = (entry.get("vdt") or {}).get("code", "").upper()
                 o = (entry.get("odot") or {}).get("code", "").upper()
                 if v not in self._used_counts and o not in self._used_counts:
                     visible = False
-
             if visible and search:
                 vc = (entry.get("vdt") or {}).get("code", "").lower()
                 oc = (entry.get("odot") or {}).get("code", "").lower()
@@ -413,12 +416,7 @@ class TranslationTab(QWidget):
                 od = (entry.get("odot") or {}).get("description", "").lower()
                 if not any(search in x for x in (vc, oc, vd, od)):
                     visible = False
-
-            try:
-                self.table.setRowHidden(row, QModelIndex(), not visible)
-            except TypeError:
-                # Fallback for widgets exposing the 2-arg form.
-                self.table.setRowHidden(row, not visible)
+            self.table.setRowHidden(row, not visible)
 
     def _find_entry(self, entry_id):
         for e in self._map_data.get("entries", []):
@@ -434,18 +432,14 @@ class TranslationTab(QWidget):
                 codes.add(o["code"])
         return sorted(codes)
 
-    def _on_double_click(self, index):
-        """v0.5.5 model/view double-click edit."""
-        if not hasattr(self, "translation_model"):
+    def _on_double_click(self, row, col):
+        item = self.table.item(row, 0)
+        if item is None:
             return
-        if not index.isValid():
+        entry_id = item.data(Qt.UserRole)
+        entry = self._find_entry(entry_id)
+        if entry is None:
             return
-
-        row = index.row()
-        if row < 0 or row >= self.translation_model.rowCount():
-            return
-
-        entry = self.translation_model.entries[row]
         dlg = EntryEditDialog(entry, self._all_odot_codes(), self)
         if dlg.exec():
             dlg.apply_changes()
@@ -495,40 +489,29 @@ class TranslationTab(QWidget):
             f"{summary['linework_changes']} linework changes.")
 
     def _on_bulk_accept(self):
-        """v0.5.5 model/view bulk accept."""
-        if not hasattr(self, "translation_model"):
-            return
-
         targets = []
-        for row, entry in enumerate(self.translation_model.entries):
-            try:
-                hidden = self.table.isRowHidden(row)
-            except Exception:
-                hidden = False
-            if hidden:
+        for row in range(self.table.rowCount()):
+            if self.table.isRowHidden(row):
                 continue
+            item = self.table.item(row, 0)
+            if item is None:
+                continue
+            entry = self._find_entry(item.data(Qt.UserRole))
             if entry and entry.get("confidence") == "best-guess" and not entry.get("user_override"):
                 targets.append(entry)
-
         if not targets:
-            QMessageBox.information(self, "Nothing to Accept", "No best-guess entries visible.")
+            QMessageBox.information(self, "Nothing to Accept",
+                "No best-guess entries visible.")
             return
-
-        resp = QMessageBox.question(
-            self,
-            "Accept All",
+        resp = QMessageBox.question(self, "Accept All",
             f"Mark all {len(targets)} visible best-guess entries as manual overrides?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if resp != QMessageBox.Yes:
             return
-
         for entry in targets:
             entry["user_override"] = True
             entry["confidence"] = "manual"
             self._dirty_ids.add(entry.get("id"))
-
         self._populate()
         self.map_modified.emit()
 
@@ -543,51 +526,20 @@ class TranslationTab(QWidget):
             "Overrides written to translation_map.json")
 
     def _on_export(self):
-        """v0.5.5 model/view export visible rows."""
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Export CSV",
-            "translation_review.csv",
-            "CSV (*.csv)",
-        )
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV",
+            "translation_review.csv", "CSV (*.csv)")
         if not path:
             return
-
-        if not hasattr(self, "translation_model"):
-            QMessageBox.information(self, "Export", "No translation rows to export.")
-            return
-
         with open(path, "w", encoding="utf-8", newline="") as f:
             w = csv.writer(f)
             w.writerow(COLUMNS)
-
-            for row, entry in enumerate(self.translation_model.entries):
-                try:
-                    hidden = self.table.isRowHidden(row)
-                except Exception:
-                    hidden = False
-                if hidden:
+            for row in range(self.table.rowCount()):
+                if self.table.isRowHidden(row):
                     continue
-
-                vdt = entry.get("vdt") or {}
-                odot = entry.get("odot") or {}
-                v_code = vdt.get("code", "")
-                o_code = odot.get("code", "")
-                count = max(
-                    self._used_counts.get(v_code.upper(), 0),
-                    self._used_counts.get(o_code.upper(), 0),
-                )
-
                 w.writerow([
-                    v_code,
-                    vdt.get("description", ""),
-                    o_code,
-                    odot.get("description", ""),
-                    short_label(entry),
-                    str(count) if count else "",
-                    entry.get("notes", ""),
+                    (self.table.item(row, c).text() if self.table.item(row, c) else "")
+                    for c in range(len(COLUMNS))
                 ])
-
         QMessageBox.information(self, "Exported", f"Wrote {path}")
 
     def _on_reseed(self):

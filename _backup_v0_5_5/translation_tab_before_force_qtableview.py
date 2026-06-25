@@ -1,4 +1,3 @@
-# v0.5.5 force translation qtableview
 # v0.5.5 translation model step3 v3
 # v0.5.5 clean translation fix
 # v0.5.5 translation final fix
@@ -14,7 +13,7 @@ import logging
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QBrush
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem, QTableView,
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QComboBox, QLineEdit, QPushButton, QLabel, QMessageBox, QFileDialog,
     QHeaderView, QCheckBox, QDialog, QGridLayout, QTextEdit, QFrame,
 )
@@ -231,13 +230,13 @@ class TranslationTab(QWidget):
         root.addLayout(filt)
 
         # Main table (7 columns, no section headers, no review pane)
-        # v0.5.5 force translation qtableview
-        self.table = QTableView()
-        self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+        self.table = QTableWidget(0, len(COLUMNS))
         # v0.5.5 translation style fix
+        self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.doubleClicked.connect(self._on_double_click)
         root.addWidget(self.table)
 

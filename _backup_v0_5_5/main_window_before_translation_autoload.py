@@ -1,4 +1,3 @@
-# v0.5.5 translation autoload
 # v0.5.5 raw empty state
 # v0.5.3 diag logs downgraded - markers moved from INFO to DEBUG
 """Main window (Phase 3: ODOT parser dispatch).
@@ -315,16 +314,6 @@ class MainWindow(QMainWindow):
             self.results = validate_rows(self.rows, self.codeset)
             self.suggestions = build_suggestions(self.rows, self.codeset, self.results)
             self._populate_table()
-            # v0.5.5 translation autoload
-            try:
-                if hasattr(self, 'translation_tab'):
-                    # TranslationTab reads parent.rows directly, so just refresh it.
-                    if hasattr(self.translation_tab, 'show_used_only'):
-                        self.translation_tab.show_used_only.setChecked(True)
-                    if hasattr(self.translation_tab, '_safe_refresh'):
-                        self.translation_tab._safe_refresh()
-            except Exception as exc:
-                log.exception('Translation auto-load failed: %s', exc)
             if hasattr(self, "modified_tab"):
                 self.modified_tab.refresh_from_parent()
             self.export_btn.setEnabled(bool(self.rows))
